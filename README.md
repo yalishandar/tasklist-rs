@@ -1,5 +1,9 @@
 # tasklist-rs
 
+<p align="center">
+    <img height="300" alt="tasklist-rs" src="images/ico.png">
+</p>
+
 _a small crate let you can easily get process name or process id on windows_
 
 - based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate 
@@ -38,5 +42,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.1.5"
+tasklist = "0.1.6"
 ```

@@ -1,11 +1,11 @@
 [package]
 name = "tasklist"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Get the process name or process id on windows"
 license = "MIT"
 repository = "https://github.com/yalishandar/tasklist-rs"
-documentation = "https://docs.rs/crate/tasklist/latest"
+documentation = "https://docs.rs/tasklist/latest/tasklist/"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package.metadata.docs.rs]
