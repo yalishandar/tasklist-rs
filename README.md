@@ -38,5 +38,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.1.3"
+tasklist = "0.1.4"
 ```
