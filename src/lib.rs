@@ -2,14 +2,8 @@
 //! 
 //! `tasklist` is a crate let you easily find process name of process id on windows.
 //! it based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate.
-
-use std::mem::zeroed;
+#[cfg(any(windows, doc))]
 use std::collections::HashMap;
-use windows::Win32::Foundation::CHAR;
-use windows::Win32::Foundation::CloseHandle;
-use std::mem::size_of;
-use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
-
 ///find the process id by the name you gave , it return a `Vec<U32>` , if the process is not exist , it will return a empty `Vec<u32>`
 /// ```
 /// unsafe{
@@ -17,7 +11,13 @@ use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH3
 ///     println!("{:#?}",aid);
 /// }
 /// ```
+#[cfg(any(windows, doc))]
 pub unsafe fn find_process_id_by_name(process_name:&str)->Vec<u32>{
+    use std::mem::zeroed;
+    use windows::Win32::Foundation::CloseHandle;
+    use std::mem::size_of;
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
+
     let mut temp:Vec<u32> = vec![];
     let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
 
@@ -48,7 +48,13 @@ pub unsafe fn find_process_id_by_name(process_name:&str)->Vec<u32>{
 ///     let pid = tasklist::find_first_process_id_by_name("cmd.exe");
 ///     println!("{:#?}",pid);
 /// }
+#[cfg(any(windows, doc))]
 pub unsafe fn find_first_process_id_by_name(process_name:&str)->Option<u32>{
+        
+        use std::mem::zeroed;
+        use windows::Win32::Foundation::CloseHandle;
+        use std::mem::size_of;
+        use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
 
         let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
 
@@ -80,7 +86,12 @@ pub unsafe fn find_first_process_id_by_name(process_name:&str)->Option<u32>{
 /// }
 /// 
 /// ```
+#[cfg(any(windows, doc))]
 pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
+    use std::mem::zeroed;
+    use windows::Win32::Foundation::CloseHandle;
+    use std::mem::size_of;
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
 
     let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
 
@@ -115,7 +126,13 @@ pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
 ///     println!("{:#?}",list);
 /// }
 /// ```
+#[cfg(any(windows, doc))]
 pub unsafe fn tasklist()->HashMap<String,u32>{
+    use std::mem::zeroed;
+    use windows::Win32::Foundation::CloseHandle;
+    use std::mem::size_of;
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
+
     let mut temp:HashMap<String, u32> = HashMap::new();
 
     let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
@@ -140,7 +157,8 @@ pub unsafe fn tasklist()->HashMap<String,u32>{
 
 
 ///get the proc name by windows `[CHAR;260]` , retun the `String` name for human.
-fn get_proc_name(name:[CHAR;260])->String{
+#[cfg(any(windows, doc))]
+fn get_proc_name(name:[windows::Win32::Foundation::CHAR;260])->String{
 
     let mut temp:Vec<u8> = vec![];
     let len = name.iter().position(|&x| x == windows::Win32::Foundation::CHAR(0)).unwrap();
