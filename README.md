@@ -1,10 +1,12 @@
 # tasklist-rs
-## a crate let you can easily get process name or process id on windows
+
+_a small crate let you can easily get process name or process id on windows_
 
 - based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate 
 
 
-```
+## example
+```rust
 use tasklist;
 
 fn main(){
