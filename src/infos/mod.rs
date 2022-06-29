@@ -7,8 +7,8 @@ use std::fmt;
 /// let p = Process::new(123,"yeah.exe");
 /// ```
 pub struct Process{
-    pid:u32,
-    pname:String,
+    pub pid:u32,
+    pub pname:String,
 }
 impl Process{
     ///new a process struct

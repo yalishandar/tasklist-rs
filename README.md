@@ -18,6 +18,7 @@ _a small crate let you can easily get tasklist and process information on window
 7. **TODO** ~~process handles information~~
 8. tasklist(all process)
 
+_remember some infomation need higher privilege in some specific windows versions_
 
 ## example
 ```rust
@@ -42,5 +43,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.1.7"
+tasklist = "0.1.8"
 ```

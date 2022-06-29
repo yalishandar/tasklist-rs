@@ -1,8 +1,36 @@
 //! # tasklist
 //! 
+//!<p align="center">
+//!<img height="200" alt="tasklist-rs" src="../../../images/ico.png">
+//!</p>
+//! 
 //! `tasklist` is a crate let you easily get tasklist and process information on windows.
 //! it based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate.
-#[cfg(any(windows, doc))]
+//! 
+//! #### what information you can get
+//! 1. process name,pid,parrentID,theradsID.
+//! 2. process start_time,exit_time,kernel_time,user_time.
+//! 3. process path and commandline params.
+//! 4. process SID and Domain/User.
+//! 5. **TODO** ~~process IO infomation~~ 
+//! 6. **TODO** ~~process memory information~~
+//! 7. **TODO** ~~process handles information~~
+//! 8. tasklist(all process)
+//! 
+//!  _remember some infomation need higher privilege in some specific windows versions_
+//! ## example
+//! ```rust
+//! use tasklist;
+//! fn main(){
+//!     unsafe{
+//!         let tl = tasklist::Tasklist::new();
+//!         for i in tl{
+//!             println!("{} {} {}",i.get_pid(),i.get_pname(),i.get_user());
+//!         }
+//!     }
+//! }
+//! 
+
 ///find the process id by the name you gave , it return a `Vec<U32>` , if the process is not exist , it will return a empty `Vec<u32>`
 /// ```
 /// unsafe{
@@ -116,7 +144,7 @@ pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
     Some(get_proc_name(process.szExeFile))
 }
 
-
+use std::collections::HashMap;
 /// get the windows tasklist ,return a `HashMap<String,u32>`
 /// `String` is the name of process, and `u32` is the id of process
 /// ```
@@ -126,7 +154,6 @@ pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
 /// }
 /// ```
 #[cfg(any(windows, doc))]
-use std::collections::HashMap;
 pub unsafe fn tasklist()->HashMap<String,u32>{
     use std::{mem::zeroed};
     use windows::Win32::Foundation::CloseHandle;
@@ -216,7 +243,7 @@ pub unsafe fn enable_debug_priv()->bool{
 /// println!("open the debug priv{:?}",tasklist::enable_debug_priv());
 /// println!("has the debug priv?{:#?}",tasklist::has_debug_priv_to(pid));
 /// ``` 
-pub unsafe fn has_debug_priv_to(pid:u32)->bool{
+pub(crate) unsafe fn has_debug_priv_to(pid:u32)->bool{
     use windows::Win32::System::Threading::{OpenProcess,PROCESS_QUERY_INFORMATION};
     use windows::Win32::Foundation::{BOOL,CloseHandle};
 
@@ -257,7 +284,11 @@ pub unsafe fn kill(pid:u32)->bool{
 }
 //load infos::info
 pub mod infos;
+#[doc(inline)]
 pub use infos::{Process,Tasklist};
+#[doc(inline)]
 pub use infos::info;
+
+
 
 

@@ -241,7 +241,7 @@ pub unsafe fn get_proc_time(pid:u32)->(String,String,String,String){
 
 //use to conver `FILETIME` to `SYSTEMTIME`
 use windows::Win32::Foundation::{FILETIME, GetLastError};
-pub unsafe fn conver_time(start_time:FILETIME,exit_time:FILETIME,kernel_time:FILETIME,user_time:FILETIME,)->(String,String,String,String){
+pub(crate) unsafe fn conver_time(start_time:FILETIME,exit_time:FILETIME,kernel_time:FILETIME,user_time:FILETIME,)->(String,String,String,String){
     use windows::Win32::System::Time::{FileTimeToSystemTime};
     use windows::Win32::Foundation::SYSTEMTIME;
     let mut temp_start = start_time;
