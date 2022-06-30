@@ -1,20 +1,17 @@
 //! # tasklist
 //! 
-//!<p align="center">
-//!<img height="200" alt="tasklist-rs" src="../../../images/ico.png">
-//!</p>
 //! 
 //! `tasklist` is a crate let you easily get tasklist and process information on windows.
 //! it based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate.
 //! 
 //! #### what information you can get
 //! 1. process name,pid,parrentID,theradsID.
-//! 2. process start_time,exit_time,kernel_time,user_time.
+//! 2. process start_time,exit_time,CPU_time.
 //! 3. process path and commandline params.
 //! 4. process SID and Domain/User.
-//! 5. **TODO** ~~process IO infomation~~ 
-//! 6. **TODO** ~~process memory information~~
-//! 7. **TODO** ~~process handles information~~
+//! 5. process IO infomation.
+//! 6. process memory information.
+//! 7. process handles information.
 //! 8. tasklist(all process)
 //! 
 //!  _remember some infomation need higher privilege in some specific windows versions_
@@ -237,24 +234,7 @@ pub unsafe fn enable_debug_priv()->bool{
 
 
 
-///judge if your program has the debug privilege to another process (because sometimes even your program has the debug privilege but still cannot debug another process like widnows11). it will return `true` if it can be debuged.
-/// ```
-/// println!("has the debug priv?{:#?}",tasklist::has_debug_priv_to(pid));
-/// println!("open the debug priv{:?}",tasklist::enable_debug_priv());
-/// println!("has the debug priv?{:#?}",tasklist::has_debug_priv_to(pid));
-/// ``` 
-pub(crate) unsafe fn has_debug_priv_to(pid:u32)->bool{
-    use windows::Win32::System::Threading::{OpenProcess,PROCESS_QUERY_INFORMATION};
-    use windows::Win32::Foundation::{BOOL,CloseHandle};
 
-    let _ = match  OpenProcess(PROCESS_QUERY_INFORMATION, BOOL(0), pid){
-        Ok(h) => 
-                {let _ = CloseHandle(h);
-                return true},
-        Err(_) =>  return false,
-    };
-
-}
 ///kill a process by process_id . if  success , it will return `true`
 /// ```
 /// unsafe{
@@ -285,7 +265,7 @@ pub unsafe fn kill(pid:u32)->bool{
 //load infos::info
 pub mod infos;
 #[doc(inline)]
-pub use infos::{Process,Tasklist};
+pub use infos::{Process,Tasklist,IoCounter,MemoryCounter};
 #[doc(inline)]
 pub use infos::info;
 

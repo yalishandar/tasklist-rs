@@ -208,7 +208,7 @@ pub unsafe fn get_proc_parrent(pid:u32)->Option<u32>{
     return None;
 
 }
-
+use crate::infos::CpuTime;
 /// get process time , including Start time , Exit time , Kernel time and User time . it will return a `tuple` which is `(start_time,exit_time,kernel_time,user_time)`
 ///```
 /// use tasklist::info;
@@ -216,7 +216,7 @@ pub unsafe fn get_proc_parrent(pid:u32)->Option<u32>{
 ///     println!("{:?}",info::get_proc_time(16056));
 /// }
 /// ```
-pub unsafe fn get_proc_time(pid:u32)->(String,String,String,String){
+pub unsafe fn get_proc_time(pid:u32)->(String,String,CpuTime){
     use windows::Win32::System::Threading::{GetProcessTimes,OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION};
     use windows::Win32::Foundation::{CloseHandle,BOOL};
 
@@ -228,13 +228,14 @@ pub unsafe fn get_proc_time(pid:u32)->(String,String,String,String){
             let mut user_time = zeroed::<FILETIME>();
             if GetProcessTimes(h, &mut start_time, &mut exit_time, &mut kernel_time, &mut user_time).as_bool(){
                 CloseHandle(h);
-                return conver_time(start_time, exit_time, kernel_time, user_time)
+                let (start_time,exit_time,kernel_time,user_time) =  conver_time(start_time, exit_time, kernel_time, user_time);
+                return (start_time,exit_time,CpuTime::new((kernel_time,user_time)))
             }else{
                 CloseHandle(h);
-                return ("none".to_string(),"none".to_string(),"none".to_string(),"none".to_string());
+                return ("none".to_string(),"none".to_string(),CpuTime{ kernel_time: "none".to_string() , user_time: "none".to_string()});
             }
         },
-        Err(_) => return ("access denied".to_string(),"access denied".to_string(),"access denied".to_string(),"access denied".to_string(),),
+        Err(_) => return ("none".to_string(),"none".to_string(),CpuTime{ kernel_time: "none".to_string() , user_time: "none".to_string()}),
     };
 }
 
@@ -276,7 +277,6 @@ pub(crate) unsafe fn conver_time(start_time:FILETIME,exit_time:FILETIME,kernel_t
 /// }
 /// ```
 pub unsafe fn get_proc_params(pid:u32)->String{
-    use std::mem::MaybeUninit;
     use windows::Win32::Foundation::{BOOL,CloseHandle};
     use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
     use windows::Win32::System::Threading::{PROCESS_VM_READ,RTL_USER_PROCESS_PARAMETERS,PEB,PROCESSINFOCLASS,NtQueryInformationProcess,OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION,PROCESS_BASIC_INFORMATION};
@@ -284,23 +284,25 @@ pub unsafe fn get_proc_params(pid:u32)->String{
     let _  = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_VM_READ,BOOL(0),pid) {
         Ok(h) => {
             let   pc = zeroed::<PROCESSINFOCLASS>();
-            let mut pbi =MaybeUninit::<PROCESS_BASIC_INFORMATION>::uninit();
-            let _ = match  NtQueryInformationProcess(h, pc, pbi.as_mut_ptr() as _, size_of::<PROCESS_BASIC_INFORMATION>() as _, null_mut()){
+            let mut pbi =zeroed::<PROCESS_BASIC_INFORMATION>();
+            let _ = match  NtQueryInformationProcess(h, pc, std::ptr::addr_of_mut!(pbi) as _, size_of::<PROCESS_BASIC_INFORMATION>() as _, null_mut()){
                 Ok(_) => {
-                    let pbi = pbi.assume_init();
-                    let mut peb = MaybeUninit::<PEB>::uninit();
-                    if ReadProcessMemory(h, pbi.PebBaseAddress as _, peb.as_mut_ptr() as _, size_of::<PEB>(), null_mut()).as_bool(){
-                        let peb = peb.assume_init();
+                    
+                    let mut peb = zeroed::<PEB>();
+                    if ReadProcessMemory(h, pbi.PebBaseAddress as _, std::ptr::addr_of_mut!(peb) as _, size_of::<PEB>(), null_mut()).as_bool(){
+                        
                         let mut proc_params = zeroed::<RTL_USER_PROCESS_PARAMETERS>();
                         
 
                         if ReadProcessMemory(h, peb.ProcessParameters as _, std::ptr::addr_of_mut!(proc_params) as _, size_of::<RTL_USER_PROCESS_PARAMETERS>(), null_mut()).as_bool(){
 
-                            println!("{:?}",proc_params);
-                            let lenth = proc_params.CommandLine.MaximumLength;
-                            let buffer = proc_params.CommandLine.Buffer;
+
+                            let cmd_lenth = proc_params.CommandLine.MaximumLength;
+                            let cmd_buffer = proc_params.CommandLine.Buffer;
+
                             
-                            return get_proc_params_from_buffer(buffer, lenth,h);
+                            
+                            return get_proc_params_from_buffer(cmd_buffer, cmd_lenth,h);
 
                         }else{
                             CloseHandle(h);
@@ -313,7 +315,7 @@ pub unsafe fn get_proc_params(pid:u32)->String{
                 },
                 Err(_) => {
                     CloseHandle(h);
-                    return format!("access denied {:?}",GetLastError()).to_string()
+                    return format!("access denied {:?}",GetLastError()).to_string();
                 },
             };
         },
@@ -338,20 +340,100 @@ pub(crate) unsafe fn get_proc_params_from_buffer(pwstr:PWSTR,len:u16,h:HANDLE)->
     let sb_sz = size_of::<[u16; 10000]>();
 
     if ReadProcessMemory(h,pwstr.0 as _,std::ptr::addr_of_mut!(temp) as _,sb_sz,null_mut()).as_bool(){
+        
         let  x = &temp[0..len as usize];
 
-        let s = match x.iter().position(|&c| c == 0) {
+        let cmd_params = match x.iter().position(|&c| c == 0) {
             Some(nul) => OsString::from_wide(&x[..nul]),
             None => OsString::from_wide(x),
         }.into_string().unwrap();
-        
-        CloseHandle(h);
-        return s
+        return cmd_params;
 
     }else{
         CloseHandle(h);
-        return format!("accrss denied {:?}",GetLastError());
+        return format!("access denied {:?}",GetLastError());
     }
     
-    
+}
+
+use crate::infos::IoCounter;
+/// get the process io counter , it will return a `IoCounter`
+/// if cant get the io counter , it will return a zero `IoCounter`
+/// ```
+///let io = unsafe{
+///    tasklist::info::get_proc_io_counter(17016)
+///};
+///println!("{:?}",io.get_other_operation_count());
+/// ```
+pub unsafe fn get_proc_io_counter(pid:u32)->IoCounter{
+    use windows::Win32::Foundation::{BOOL,CloseHandle};
+    use windows::Win32::System::Threading::{GetProcessIoCounters,IO_COUNTERS,OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION};
+
+    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid){
+        Ok(h) => {
+            let mut io = zeroed::<IO_COUNTERS>();
+            if GetProcessIoCounters(h, &mut io).as_bool(){
+                CloseHandle(h);
+                return IoCounter::new(io)
+            }else{
+                CloseHandle(h);
+                return zeroed::<IoCounter>()
+            }
+        },
+        Err(_) => return zeroed::<IoCounter>(),
+    };
+}
+use crate::infos::MemoryCounter;
+///get process memory info . it will return a `MemoryCounter` struct .
+///```
+///let mem = unsafe{
+///     tasklist::info::get_proc_memory_info(17016)
+///};
+///println!("{:?}",mem.get_quota_peak_non_paged_pool_usage());
+///```
+pub unsafe fn get_proc_memory_info(pid:u32)->MemoryCounter{
+    use windows::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo,PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::Foundation::{BOOL,CloseHandle};
+    use windows::Win32::System::Threading::{OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION};
+
+    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid){
+        Ok(h) => {
+            let mut mc = zeroed::<PROCESS_MEMORY_COUNTERS>();
+            if K32GetProcessMemoryInfo(h, &mut mc, size_of::<PROCESS_MEMORY_COUNTERS>() as _).as_bool(){
+                CloseHandle(h);
+                return MemoryCounter::new(mc)
+            }else{
+                CloseHandle(h);
+                return zeroed::<MemoryCounter>()
+            }
+        },
+        Err(_) => return zeroed::<MemoryCounter>(),
+    };
+
+}
+/// get process handle counter . return `u32`
+/// ```
+///for i in unsafe{tasklist::Tasklist::new()}{
+///if i.pid == 8528{
+///    println!("{}",i.get_handles_counter())
+///  }
+///}
+/// ```
+pub unsafe fn get_process_handle_counter(pid:u32)->u32{
+    use windows::Win32::System::Threading::{GetProcessHandleCount,OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::Foundation::{BOOL,CloseHandle};
+
+    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid){
+        Ok(h) => {
+            let mut count = 0 as u32;
+            if GetProcessHandleCount(h, &mut count).as_bool(){
+                CloseHandle(h);
+                return count;
+            }else{
+                CloseHandle(h);
+                return 0;
+            }
+        },
+        Err(_) => return 0,
+    };
 }

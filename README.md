@@ -10,12 +10,12 @@ _a small crate let you can easily get tasklist and process information on window
 
 #### what information you can get
 1. process name,pid,parrentID,theradsID.
-2. process start_time,exit_time,kernel_time,user_time.
+2. process start_time,exit_time,and CPU_time.
 3. process path and commandline params.
 4. process SID and Domain/User.
-5. **TODO** ~~process IO infomation~~ 
-6. **TODO** ~~process memory information~~
-7. **TODO** ~~process handles information~~
+5. process IO infomation.
+6. process memory information.
+7. process handles information.
 8. tasklist(all process)
 
 _remember some infomation need higher privilege in some specific windows versions_
@@ -43,5 +43,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.1.8"
+tasklist = "0.1.9"
 ```
