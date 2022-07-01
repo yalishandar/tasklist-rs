@@ -1,6 +1,6 @@
 [package]
 name = "tasklist"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Get the tasklist and process information on windows"
 license = "MIT"

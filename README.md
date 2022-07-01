@@ -40,6 +40,7 @@ fn main(){
 <p align="center">
     <img height="300" alt="tasklist-rs" src="images/example1.png">
 </p>
+
 ```rust
 use tasklist;
 
@@ -60,11 +61,11 @@ fn main(){
 <p align="center">
     <img height="300" alt="tasklist-rs" src="images/example.png">
 </p>
-## Usage
 
+## Usage
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.0"
+tasklist = "0.2.1"
 ```
