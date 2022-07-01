@@ -1,4 +1,5 @@
 pub mod info;
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug)]
@@ -107,6 +108,13 @@ impl Process{
     pub fn kill(&self)->bool{
         unsafe{kill(self.pid)}
     }
+    /// get the file info of the process . use `GetFileVersionInfoExW` api . it will return a `HashMap<String,String>` including a lot of infomation.
+    /// you can get value throught `CompanyName` `FileDescription` `OriginalFilename` `ProductName` `ProductVersion` `PrivateBuild` `InternalName` `LegalCopyright` `FileVersion` keys. 
+    pub fn get_file_info(&self)->HashMap<String,String>{
+        unsafe{
+             get_proc_file_info(self.pid)
+        } 
+     }
 }
 
 impl fmt::Display for Process {
@@ -121,7 +129,7 @@ use windows::Win32::Foundation::HANDLE;
 use std::mem::{zeroed,size_of};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot,TH32CS_SNAPPROCESS,PROCESSENTRY32,Process32First,Process32Next};
 
-use self::info::{get_proc_sid_and_user, get_proc_threads, get_proc_path, get_proc_parrent, get_proc_time, get_proc_params, get_proc_io_counter, get_proc_memory_info, get_process_handle_counter};
+use self::info::{get_proc_sid_and_user, get_proc_threads, get_proc_path, get_proc_parrent, get_proc_time, get_proc_params, get_proc_io_counter, get_proc_memory_info, get_process_handle_counter, get_proc_file_info};
 ///this struct is `Process` Iterator.
 pub struct Tasklist{
     process:Process,
@@ -227,6 +235,7 @@ impl MemoryCounter {
     pub fn get_peak_pagefile_usage(&self)->usize{
         self.peak_pagefile_usage
     }
+
 }
 
 use windows::Win32::System::Threading::IO_COUNTERS;
@@ -268,6 +277,7 @@ impl  IoCounter{
     pub fn get_other_transfer_count(&self)->u64{
         self.other_transfer_count
     }
+
 }
 
 /// the struct of process's CpuTime . 

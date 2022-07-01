@@ -74,9 +74,10 @@ pub unsafe fn get_proc_sid_and_user(pid:u32)->(String,String){
 }
 
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::mem::size_of;
-use std::os::windows::prelude::OsStringExt;
+use std::os::windows::prelude::{OsStringExt, OsStrExt};
 use std::ptr::{null_mut};
 use std::{mem::zeroed};
 
@@ -436,4 +437,123 @@ pub unsafe fn get_process_handle_counter(pid:u32)->u32{
         },
         Err(_) => return 0,
     };
+}
+
+
+/// get the file info of the process . use `GetFileVersionInfoExW` api . it will return a `HashMap<String,String>` including a lot of infomation.
+/// you can get value throught `CompanyName` `FileDescription` `OriginalFilename` `ProductName` `ProductVersion` `PrivateBuild` `InternalName` `LegalCopyright` `FileVersion` keys. 
+/// ```
+/// for i in unsafe{tasklist::Tasklist::new()}{
+///     unsafe{println!("{:?}",get_proc_file_info(i.get_pid()))};         
+/// }
+/// ```
+/// 
+/// ```
+/// for i in unsafe{tasklist::Tasklist::new()}{
+///     unsafe{println!("{:?}",get_proc_file_info(i.get_pid()).get("FileDescription"))}; 
+///  }
+/// ```
+/// NOTICE: some specific situation this function will return a `Some("")` but not a `None`
+pub unsafe fn get_proc_file_info(pid:u32)->HashMap<String,String>{
+    use windows::Win32::Storage::FileSystem::{ GetFileVersionInfoSizeExW,FILE_VER_GET_LOCALISED,GetFileVersionInfoExW};
+    use std::ffi::OsStr;
+    use windows::core::PCWSTR;
+
+    let path = get_proc_path(pid);
+    let path_str:Vec<u16> = OsStr::new(&path).encode_wide().chain(Some(0).into_iter()).collect();
+
+    let mut temp:u32 = 0;
+
+    let  len = GetFileVersionInfoSizeExW(FILE_VER_GET_LOCALISED,PCWSTR(path_str.as_ptr()),&mut temp);
+    let mut addr = vec![0u16;len as usize];
+    let mut hash:HashMap<String, String> = HashMap::new();
+    if GetFileVersionInfoExW(FILE_VER_GET_LOCALISED,PCWSTR(path_str.as_ptr()),0,len,addr.as_mut_ptr() as _).as_bool(){
+        let  a = addr.split(|&x| x==0);
+        let mut temp:Vec<String> = vec![];
+        for i in a.into_iter(){
+            let ds = OsString::from_wide(&i).into_string().unwrap();
+            if ds==""{
+                continue;
+            }else {
+                temp.push(ds);
+                
+            }
+        }
+  
+        let mut index = 0;
+
+        let s = temp.clone();
+
+
+        for i in temp{
+            index +=1;
+            if i.contains("CompanyName"){
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("CompanyName".to_string(), String::from(""));
+                }else{
+                    hash.insert("CompanyName".to_string(), s[index].clone());
+                }
+                
+            }else if i.contains("FileDescription"){
+
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("FileDescription".to_string(), String::from(""));
+                }else{
+                    hash.insert("FileDescription".to_string(), s[index].clone());
+                }
+                
+            }else if i.contains("OriginalFilename"){
+
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("OriginalFilename".to_string(), String::from(""));
+                }else{
+                    hash.insert("OriginalFilename".to_string(), s[index].clone());
+                }
+                
+            }else if i.contains("ProductName"){
+                
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("ProductName".to_string(), String::from(""));
+                }else{
+                    hash.insert("ProductName".to_string(), s[index].clone());
+                }
+                
+            }else if i.contains("ProductVersion") {
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("ProductVersion".to_string(), String::from(""));
+                }else{
+                    hash.insert("ProductVersion".to_string(), s[index].clone());
+                }
+                
+            }else if i.contains("PrivateBuild"){
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("PrivateBuild".to_string(), String::from(""));
+                }else{
+                    hash.insert("PrivateBuild".to_string(), s[index].clone());
+                }
+            }else if i.contains("InternalName"){
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("InternalName".to_string(), String::from(""));
+                }else{
+                    hash.insert("InternalName".to_string(), s[index].clone());
+                }
+            }else if i.contains("LegalCopyright"){
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("LegalCopyright".to_string(), String::from(""));
+                }else{
+                    hash.insert("LegalCopyright".to_string(), s[index].clone());
+                }
+            }else if i.contains("FileVersion"){
+                if s[index].contains("FileVersion")||s[index].contains("LegalCopyright")||s[index].contains("InternalName")||s[index].contains("PrivateBuild")||s[index].contains("CompanyName")||s[index].contains("FileDescription")||s[index].contains("OriginalFilename")||s[index].contains("ProductName")||s[index].contains("ProductVersion"){
+                    hash.insert("FileVersion".to_string(), String::from(""));
+                }else{
+                    hash.insert("FileVersion".to_string(), s[index].clone());
+                }
+            }
+        }
+        
+    }
+
+        return hash;
+
 }
