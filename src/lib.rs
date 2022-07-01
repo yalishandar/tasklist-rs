@@ -13,7 +13,7 @@
 //! 6. Process memory information , including all of `PROCESS_MEMORY_COUNTERS` member.
 //! 7. Process handles information , use `GetProcessHandleCount` Api.
 //! 8. Process file infomation , use `GetFileVersionInfoExW` Api.
-//! 9. Pterate over all processes
+//! 9. Iterate over all processes
 //! 
 //!  _remember some infomation need higher privilege in some specific windows versions_
 //! ## example
