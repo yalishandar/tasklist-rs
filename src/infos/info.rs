@@ -1,5 +1,12 @@
 ///get the process sid and domain/user name from pid . it will return a tuple consisting of `(domain/user,sid)`. if the privilege is not enough , it will return the failed reson.
 /// ```
+/// use tasklist;
+/// unsafe{
+///     println!("{:?}",tasklist::get_proc_sid_and_user(17716));
+/// }
+/// ```
+/// ## OR
+/// ```
 /// use tasklist::info;
 /// unsafe{
 ///     println!("{:?}",info::get_proc_sid_and_user(17716));
@@ -94,6 +101,16 @@ unsafe fn convert_pstr_to_string(pstr:PSTR)->String{
 }
 
 ///get process thread id from pid , it will return `Vec<u32>` . 
+/// 
+/// ```
+/// use tasklist;
+/// unsafe{
+///     println!("{:?}",tasklist::get_proc_threads(17716));
+/// }
+/// 
+/// ```
+///
+/// ## OR
 /// ```
 /// use tasklist::info;
 /// unsafe{
@@ -128,7 +145,14 @@ pub unsafe fn get_proc_threads(pid:u32)->Vec<u32>{
     temp
 
 }
-///get process full path from pid , it will return `String` 
+///get process full path from pid , it will return  `String` which is the location of process.
+/// ```
+/// use tasklist;
+/// unsafe{
+///     println!("{:?}",tasklist::get_proc_path(1232));
+/// }
+/// ```
+/// ## OR
 /// ```
 /// use tasklist::info;
 /// unsafe{
@@ -175,6 +199,15 @@ pub(crate) fn conver_w_to_string(char:Vec<u16>)->String{
 }
 /// get process parrent id from pid , it will return a `Option<u32>`
 /// ```
+/// use tasklist;
+/// unsafe{
+///     println!("{:?}",tasklist::get_proc_parrent(688));
+/// }
+/// 
+/// ```
+/// ## OR
+/// 
+/// ```
 /// use tasklist::info;
 /// unsafe{
 ///     println!("{:?}",info::get_proc_parrent(688));
@@ -210,8 +243,15 @@ pub unsafe fn get_proc_parrent(pid:u32)->Option<u32>{
 
 }
 use crate::infos::CpuTime;
-/// get process time , including Start time , Exit time , Kernel time and User time . it will return a `tuple` which is `(start_time,exit_time,kernel_time,user_time)`
+/// get process time , including Start time , Exit time , Kernel time and User time . it will return a `tuple` which is `(start_time,exit_time,CpuTime)`
 ///```
+/// use tasklist;
+/// unsafe{
+///     println!("{:?}",tasklist::get_proc_time(16056));
+/// }
+/// ```
+/// ## OR
+/// ```
 /// use tasklist::info;
 /// unsafe{
 ///     println!("{:?}",info::get_proc_time(16056));
@@ -270,7 +310,15 @@ pub(crate) unsafe fn conver_time(start_time:FILETIME,exit_time:FILETIME,kernel_t
 }
 
 
-/// get the process params . it will return `String` . 
+/// get the process command line params . it will return `String` . 
+/// ```
+/// use tasklist;
+/// unsafe{
+///     println!("{}",tasklist::get_proc_params(20352));
+/// }
+/// 
+/// ```
+/// ## OR
 /// ```
 /// use tasklist::info;
 /// unsafe{
@@ -361,8 +409,17 @@ use crate::infos::IoCounter;
 /// get the process io counter , it will return a `IoCounter`
 /// if cant get the io counter , it will return a zero `IoCounter`
 /// ```
+/// use tasklist;
+/// let io = unsafe{
+///     tasklist::get_proc_io_counter(17016)
+/// };
+/// println!("{:?}",io.get_other_operation_count());
+/// ```
+/// ## OR
+/// ```
+/// use tasklist::info;
 ///let io = unsafe{
-///    tasklist::info::get_proc_io_counter(17016)
+///    info::get_proc_io_counter(17016)
 ///};
 ///println!("{:?}",io.get_other_operation_count());
 /// ```
@@ -386,9 +443,21 @@ pub unsafe fn get_proc_io_counter(pid:u32)->IoCounter{
 }
 use crate::infos::MemoryCounter;
 ///get process memory info . it will return a `MemoryCounter` struct .
+/// ```
+/// use tasklist;
+/// 
+/// let mem = unsafe{
+///     tasklist::get_proc_memory_info(17016)
+/// };
+/// println!("{:?}",mem.get_quota_peak_non_paged_pool_usage());
+/// 
+/// ```
+/// ## OR
 ///```
+///use tasklist::info;
+/// 
 ///let mem = unsafe{
-///     tasklist::info::get_proc_memory_info(17016)
+///     info::get_proc_memory_info(17016)
 ///};
 ///println!("{:?}",mem.get_quota_peak_non_paged_pool_usage());
 ///```
@@ -413,11 +482,22 @@ pub unsafe fn get_proc_memory_info(pid:u32)->MemoryCounter{
 
 }
 /// get process handle counter . return `u32`
+/// 
 /// ```
+/// use tasklist;
+/// for i in unsafe{tasklist::Tasklist::new()}{
+///     if i.pid == 8528{
+///         println!("{}",tasklist::get_process_handle_counter(i.get_pid()))
+///     }
+/// }
+/// ```
+/// ## OR
+/// ```
+///use tasklist::info;
 ///for i in unsafe{tasklist::Tasklist::new()}{
-///if i.pid == 8528{
-///    println!("{}",i.get_handles_counter())
-///  }
+///     if i.pid == 8528{
+///         println!("{}",info::get_process_handle_counter(i.get_pid()))
+///     }
 ///}
 /// ```
 pub unsafe fn get_process_handle_counter(pid:u32)->u32{
@@ -443,8 +523,15 @@ pub unsafe fn get_process_handle_counter(pid:u32)->u32{
 /// get the file info of the process . use `GetFileVersionInfoExW` api . it will return a `HashMap<String,String>` including a lot of infomation.
 /// you can get value throught `CompanyName` `FileDescription` `OriginalFilename` `ProductName` `ProductVersion` `PrivateBuild` `InternalName` `LegalCopyright` `FileVersion` keys. 
 /// ```
+/// use tasklist::info;
 /// for i in unsafe{tasklist::Tasklist::new()}{
-///     unsafe{println!("{:?}",get_proc_file_info(i.get_pid()))};         
+///     unsafe{println!("{:?}",info::get_proc_file_info(i.get_pid()))};         
+/// }
+/// ```
+/// ```
+/// use tasklist;
+/// for i in unsafe{tasklist::Tasklist::new()}{
+///     unsafe{println!("{:?}",tasklist::get_proc_file_info(i.get_pid()))};         
 /// }
 /// ```
 /// 

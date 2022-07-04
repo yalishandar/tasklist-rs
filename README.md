@@ -22,6 +22,7 @@ _a small crate let you can easily get tasklist and process information on window
 _remember some infomation need higher privilege in some specific windows versions_
 
 ## example
+Get all process pid , process name and user .
 ```rust
 use tasklist;
 
@@ -40,6 +41,8 @@ fn main(){
 <p align="center">
     <img height="300" alt="tasklist-rs" src="images/example1.png">
 </p>
+
+Get all process name , pid , company name , file description.
 
 ```rust
 use tasklist;
@@ -62,10 +65,11 @@ fn main(){
     <img height="300" alt="tasklist-rs" src="images/example.png">
 </p>
 
+
 ## Usage
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.10"
+tasklist = "0.2.11"
 ```

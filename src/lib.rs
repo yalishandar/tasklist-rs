@@ -17,6 +17,7 @@
 //! 
 //!  _remember some infomation need higher privilege in some specific windows versions_
 //! ## example
+//! Get all process pid , process name and user .
 //! ```rust
 //! use tasklist;
 //! fn main(){
@@ -27,6 +28,26 @@
 //!         }
 //!     }
 //! }
+//! ```
+//! Get all process name , pid , company name , file description.
+//! ```rust
+//! use tasklist;
+//! 
+//! fn main(){
+//!     for i in unsafe{tasklist::Tasklist::new()}{
+//!         let cpn = match i.get_file_info().get("CompanyName"){
+//!             Some(h)=>h.to_string(),
+//!             None=>"".to_string(),
+//!         };
+//!         let des = match i.get_file_info().get("FileDescription"){
+//!             Some(h)=>h.to_string(),
+//!             None=>"".to_string(),
+//!         };
+//!         println!("\t{} \t{} \t{} \t{}",i.get_pname(),i.get_pid(),cpn,des)
+//!        }
+//! }
+//!
+//! ```
 //! 
 
 ///find the process id by the name you gave , it return a `Vec<U32>` , if the process is not exist , it will return a empty `Vec<u32>`
@@ -265,6 +286,8 @@ pub unsafe fn kill(pid:u32)->bool{
 pub mod infos;
 #[doc(inline)]
 pub use infos::{Process,Tasklist,IoCounter,MemoryCounter};
+#[doc(inline)]
+pub use infos::info::*;
 #[doc(inline)]
 pub use infos::info;
 
