@@ -644,3 +644,30 @@ pub unsafe fn get_proc_file_info(pid:u32)->HashMap<String,String>{
         return hash;
 
 }
+
+///judge the process is running on wow64 or not ， it will return a `Option<bool>` (you must consider the situation that OpenProcess cannot be used)
+/// 
+/// ```
+/// let tl = Tasklist::new();
+/// for i in tl{           
+///    println!("pname: {}\tpid: {}\t is_wow_64 :{:?}",i.get_pname(),i.get_pid(),tasklist::is_wow_64(i.get_pid()));   
+/// }
+/// ```
+pub unsafe fn is_wow_64(pid:u32)->Option<bool>{
+    use windows::Win32::System::Threading::{IsWow64Process,OpenProcess,PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::Foundation::{BOOL,CloseHandle};
+
+    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid){
+        Ok(h) => {
+            let mut wow64:BOOL = BOOL(1);
+            if IsWow64Process(h, &mut wow64).as_bool(){
+                CloseHandle(h);
+                return Some(wow64.as_bool());
+            }else{
+                CloseHandle(h);
+                return Some(wow64.as_bool());
+            }
+        },
+        Err(_) => return None,
+    };
+}

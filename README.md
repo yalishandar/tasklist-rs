@@ -17,7 +17,8 @@ _a small crate let you can easily get tasklist and process information on window
 6. Process memory information , including all of `PROCESS_MEMORY_COUNTERS` member.
 7. Process handles information , use `GetProcessHandleCount` Api.
 8. Process file infomation , use `GetFileVersionInfoExW` Api.
-9. Iterate over all processes
+9. Check whether the process is running in the WOW64 environment.
+10. Iterate over all processes
 
 _remember some infomation need higher privilege in some specific windows versions_
 
@@ -71,5 +72,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.11"
+tasklist = "0.2.12"
 ```
