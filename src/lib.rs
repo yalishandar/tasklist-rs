@@ -1,9 +1,9 @@
 //! # tasklist
-//! 
-//! 
+//!
+//!
 //! `tasklist` is a crate let you easily get tasklist and process information on windows.
 //! it based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate.
-//! 
+//!
 //! #### what information you can get
 //! 1. Process name,pid,parrentID,theradsID.
 //! 2. Process start_time,exit_time,and CPU_time(including kernel time and user time).
@@ -15,7 +15,7 @@
 //! 8. Process file infomation , use `GetFileVersionInfoExW` Api.
 //! 9. Check whether the process is running in the WOW64 environment.
 //! 10. Iterate over all processes
-//! 
+//!
 //!  _remember some infomation need higher privilege in some specific windows versions_
 //! ## example
 //! Get all process pid , process name and user .
@@ -33,7 +33,7 @@
 //! Get all process name , pid , company name , file description.
 //! ```rust
 //! use tasklist;
-//! 
+//!
 //! fn main(){
 //!     for i in unsafe{tasklist::Tasklist::new()}{
 //!         let cpn = match i.get_file_info().get("CompanyName"){
@@ -49,7 +49,7 @@
 //! }
 //!
 //! ```
-//! 
+//!
 
 ///find the process id by the name you gave , it return a `Vec<U32>` , if the process is not exist , it will return a empty `Vec<u32>`
 /// ```
@@ -97,7 +97,7 @@ pub unsafe fn find_process_id_by_name(process_name:&str)->Vec<u32>{
 /// }
 #[cfg(any(windows, doc))]
 pub unsafe fn find_first_process_id_by_name(process_name:&str)->Option<u32>{
-        
+
         use std::mem::zeroed;
         use windows::Win32::Foundation::CloseHandle;
         use std::mem::size_of;
@@ -131,7 +131,7 @@ pub unsafe fn find_first_process_id_by_name(process_name:&str)->Option<u32>{
 ///     let pname = tasklist::find_process_name_by_id(9720);
 ///     println!("{:#?}",pname);
 /// }
-/// 
+///
 /// ```
 #[cfg(any(windows, doc))]
 pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
@@ -160,11 +160,14 @@ pub unsafe fn find_process_name_by_id(process_id:u32)->Option<String>{
     }
 
     CloseHandle(h);
-    
+
     Some(get_proc_name(process.szExeFile))
 }
 
 use std::collections::HashMap;
+use encoding::all::WINDOWS_1252;
+use encoding::{DecoderTrap, Encoding};
+
 /// get the windows tasklist ,return a `HashMap<String,u32>`
 /// `String` is the name of process, and `u32` is the id of process
 /// ```
@@ -214,14 +217,12 @@ fn get_proc_name(name:[windows::Win32::Foundation::CHAR;260])->String{
         temp.push(i.0.clone());
     }
 
-    let s = String::from_utf8(temp[0..len].to_vec()).unwrap();
-
-    s
+    WINDOWS_1252.decode(&*temp[0..len].to_vec(), DecoderTrap::Ignore).unwrap()
 }
 /// enbale the debug privilege for your program , it return a `bool` to show if it success.
 /// ```
 /// println!("open the debug priv{:?}",tasklist::enable_debug_priv());
-/// ``` 
+/// ```
 pub unsafe fn enable_debug_priv()->bool{
     use std::ptr::null_mut;
     use std::mem::size_of;
@@ -231,7 +232,7 @@ pub unsafe fn enable_debug_priv()->bool{
     use windows::Win32::System::Threading::{GetCurrentProcess};
     use windows::Win32::Security::{TOKEN_ADJUST_PRIVILEGES,TOKEN_QUERY,LUID_AND_ATTRIBUTES,SE_PRIVILEGE_ENABLED,TOKEN_PRIVILEGES,LookupPrivilegeValueA,AdjustTokenPrivileges};
 
-    
+
     let mut h:HANDLE = HANDLE(0);
     OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY, &mut h);
     let la = LUID_AND_ATTRIBUTES{ Luid: LUID{ LowPart: 0, HighPart: 0 }, Attributes: SE_PRIVILEGE_ENABLED };
@@ -263,7 +264,7 @@ pub unsafe fn enable_debug_priv()->bool{
 ///     let pid = pid[0];
 ///     println!("{:#?}",tasklist::kill(pid));
 /// }
-/// 
+///
 /// ```
 pub unsafe fn kill(pid:u32)->bool{
     use windows::Win32::System::Threading::{OpenProcess,PROCESS_TERMINATE,TerminateProcess};
