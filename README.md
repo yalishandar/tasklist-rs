@@ -31,6 +31,7 @@ fn main(){
    
     unsafe{
         let tl = tasklist::Tasklist::new();
+        tasklist::enable_debug_priv();
         for i in tl{
             println!("{} {} {}",i.get_pid(),i.get_pname(),i.get_user());
         }
@@ -49,6 +50,7 @@ Get all process name , pid , company name , file description.
 use tasklist;
 
 fn main(){
+    tasklist::enable_debug_priv();
     for i in unsafe{tasklist::Tasklist::new()}{
         let cpn = match i.get_file_info().get("CompanyName"){
             Some(h)=>h.to_string(),
@@ -72,5 +74,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.13"
+tasklist = "0.2.14"
 ```

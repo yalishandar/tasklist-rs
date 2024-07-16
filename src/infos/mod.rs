@@ -135,18 +135,22 @@ impl Tasklist {
         let mut process = zeroed::<PROCESSENTRY32W>();
         process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-        if Process32FirstW(h, &mut process).as_bool() {
-            let pid = process.th32ProcessID;
-            let pname = get_proc_name(process.szExeFile);
-            return Tasklist {
-                process: Process::new(pid, pname),
-                index: 0,
-                handle: h,
-                entry: process,
-            };
-        } else {
-            panic!("error when new Tasklist");
-        }
+        match Process32FirstW(h, &mut process){
+            Ok(_)=>{
+                let pid = process.th32ProcessID;
+                let pname = get_proc_name(process.szExeFile);
+                return Tasklist {
+                    process: Process::new(pid, pname),
+                    index: 0,
+                    handle: h,
+                    entry: process,
+                };
+            },
+            Err(_)=>{
+                panic!("error when new Tasklist");
+            }
+
+        } 
     }
 }
 
@@ -161,12 +165,16 @@ impl Iterator for Tasklist {
         let mut process = self.entry;
 
         unsafe {
-            if Process32NextW(self.handle, &mut process).as_bool() {
-                let pid = process.th32ProcessID;
-                let pname = get_proc_name(process.szExeFile);
-                Some(Process::new(pid, pname))
-            } else {
-                None
+            match Process32NextW(self.handle, &mut process){
+                 Ok(_)=>{
+                    let pid = process.th32ProcessID;
+                    let pname = get_proc_name(process.szExeFile);
+                    Some(Process::new(pid, pname))
+                },
+                Err(_)=>{
+                    None
+                }
+              
             }
         }
     }

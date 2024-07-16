@@ -74,19 +74,24 @@ pub unsafe fn find_process_id_by_name(process_name: &str) -> Vec<u32> {
     let mut process = zeroed::<PROCESSENTRY32W>();
     process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    if Process32FirstW(h, &mut process).as_bool() {
-        loop {
-            if Process32NextW(h, &mut process).as_bool() {
-                if get_proc_name(process.szExeFile) == process_name {
-                    temp.push(process.th32ProcessID);
-                }
-            } else {
-                break;
+    match Process32FirstW(h, &mut process) {
+        Ok(_)=>loop {
+            match Process32NextW(h, &mut process) {
+                Ok(_)=>{
+                    if get_proc_name(process.szExeFile) == process_name {
+                        temp.push(process.th32ProcessID);
+                    }
+                    else {
+                    break;
+                    }
+                },
+                Err(_)=>break
             }
-        }
+        },
+        Err(_)=>{}
     }
 
-    CloseHandle(h);
+    let _ = CloseHandle(h);
     temp
 }
 
@@ -111,19 +116,25 @@ pub unsafe fn find_first_process_id_by_name(process_name: &str) -> Option<u32> {
     let mut process = zeroed::<PROCESSENTRY32W>();
     process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    if Process32FirstW(h, &mut process).as_bool() {
-        loop {
-            if Process32NextW(h, &mut process).as_bool() {
-                if get_proc_name(process.szExeFile) == process_name {
-                    break;
-                }
-            } else {
-                return None;
-            }
-        }
+    match Process32FirstW(h, &mut process){
+        Ok(_)=>{
+            loop {
+                match Process32NextW(h, &mut process){
+                    Ok(_)=>{
+                        if get_proc_name(process.szExeFile) == process_name {
+                            break;
+                        }
+                     else {
+                        return None;
+                        }
+                    },
+                    Err(_)=>todo!()
+            }}
+        },
+        Err(_)=>todo!()
     }
 
-    CloseHandle(h);
+    let _ = CloseHandle(h);
     Some(process.th32ProcessID)
 }
 
@@ -150,20 +161,26 @@ pub unsafe fn find_process_name_by_id(process_id: u32) -> Option<String> {
     let mut process = zeroed::<PROCESSENTRY32W>();
     process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    if Process32FirstW(h, &mut process).as_bool() {
-        loop {
-            if Process32NextW(h, &mut process).as_bool() {
-                let id: u32 = process.th32ProcessID;
-                if id == process_id {
-                    break;
+    match Process32FirstW(h, &mut process){
+        Ok(_)=>{
+            loop {
+                match Process32NextW(h, &mut process){
+                    Ok(_)=>{
+                        let id: u32 = process.th32ProcessID;
+                    if id == process_id {
+                        break;
+                    }
+                    },
+                    Err(_)=>{
+                        return None;
+                    }
                 }
-            } else {
-                return None;
             }
-        }
+        },
+        Err(_)=>return None
     }
 
-    CloseHandle(h);
+    let _ = CloseHandle(h);
 
     Some(get_proc_name(process.szExeFile))
 }
@@ -195,29 +212,35 @@ pub unsafe fn tasklist() -> HashMap<String, u32> {
     let mut process = zeroed::<PROCESSENTRY32W>();
     process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    if Process32FirstW(h, &mut process).as_bool() {
-        loop {
-            if Process32NextW(h, &mut process).as_bool() {
-                temp.insert(
-                    get_proc_name(process.szExeFile),
-                    process.th32ProcessID.try_into().unwrap(),
-                );
-            } else {
-                break;
+    match Process32FirstW(h, &mut process) {
+        Ok(_)=>{
+            loop {
+                match Process32NextW(h, &mut process) {
+                    Ok(_)=>{
+                        temp.insert(
+                            get_proc_name(process.szExeFile),
+                            process.th32ProcessID.try_into().unwrap(),
+                        );
+                    }
+                    Err(_)=>break
+                }
             }
-        }
+        },
+        Err(_)=>{}
     }
 
-    CloseHandle(h);
+    let _ = CloseHandle(h);
     temp
 }
 
 ///get the proc name by windows `[CHAR;260]` , retun the `String` name for human.
 #[cfg(any(windows, doc))]
 fn get_proc_name(name: [u16; 260]) -> String {
-    use std::os::windows::ffi::OsStringExt;
-    let s = std::ffi::OsString::from_wide(&name);
-    s.into_string().unwrap()
+    //use std::os::windows::ffi::OsStringExt;
+    //let s = std::ffi::OsString::from_wide(&name);
+    let s = String::from_utf16_lossy(&name);
+    //s.into_string().unwrap()
+    s
 }
 /// enbale the debug privilege for your program , it return a `bool` to show if it success.
 /// ```
@@ -235,8 +258,8 @@ pub unsafe fn enable_debug_priv() -> bool {
     use windows::Win32::System::Threading::GetCurrentProcess;
     use windows::Win32::System::Threading::OpenProcessToken;
 
-    let mut h: HANDLE = HANDLE(0);
-    OpenProcessToken(
+    let mut h: HANDLE = HANDLE(0 as _);
+    let _ = OpenProcessToken(
         GetCurrentProcess(),
         TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
         &mut h,
@@ -254,33 +277,41 @@ pub unsafe fn enable_debug_priv() -> bool {
     };
     let privilege = "SeDebugPrivilege\0";
 
-    if LookupPrivilegeValueA(
+    match LookupPrivilegeValueA(
         PCSTR(null_mut()),
         PCSTR(privilege.as_ptr()),
         &mut tp.Privileges[0].Luid,
     )
-    .as_bool()
+    
     {
-        if AdjustTokenPrivileges(
+       Ok(_)=>{
+        match AdjustTokenPrivileges(
             h,
             BOOL(0),
-            &mut tp,
+            Some(&mut tp),
             size_of::<TOKEN_PRIVILEGES>() as _,
-            0 as _,
-            0 as _,
+            None,
+            None,
         )
-        .as_bool()
+        
         {
-            CloseHandle(h);
-            return true;
-        } else {
-            CloseHandle(h);
-            return false;
+            Ok(_)=>{
+                let _ = CloseHandle(h);
+                return true;
+            },
+            Err(_)=>{
+                let _ = CloseHandle(h);
+                return false;
+            }
+           
         }
-    } else {
-        CloseHandle(h);
+       },
+       Err(_)=>{
+        let _ = CloseHandle(h);
         return false;
-    }
+       }
+    } 
+    
 }
 
 ///kill a process by process_id . if  success , it will return `true`
@@ -298,13 +329,16 @@ pub unsafe fn kill(pid: u32) -> bool {
 
     let _ = match OpenProcess(PROCESS_TERMINATE, BOOL(0), pid) {
         Ok(h) => {
-            if TerminateProcess(h, 0).as_bool() {
-                CloseHandle(h);
+            match TerminateProcess(h, 0) {
+                Ok(_)=>{
+                    let _ = CloseHandle(h);
                 return true;
-            } else {
-                CloseHandle(h);
-                return false;
-            }
+                },
+                Err(_)=>{
+                    let _ = CloseHandle(h);
+                    return false;
+                }
+            } 
         }
         Err(_) => return false,
     };
