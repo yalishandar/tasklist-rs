@@ -138,7 +138,7 @@ impl Tasklist {
         match Process32FirstW(h, &mut process){
             Ok(_)=>{
                 let pid = process.th32ProcessID;
-                let pname = get_proc_name(process.szExeFile);
+                let pname = get_proc_name(&process.szExeFile);
                 return Tasklist {
                     process: Process::new(pid, pname),
                     index: 0,
@@ -168,7 +168,7 @@ impl Iterator for Tasklist {
             match Process32NextW(self.handle, &mut process){
                  Ok(_)=>{
                     let pid = process.th32ProcessID;
-                    let pname = get_proc_name(process.szExeFile);
+                    let pname = get_proc_name(&process.szExeFile);
                     Some(Process::new(pid, pname))
                 },
                 Err(_)=>{

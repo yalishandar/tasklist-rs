@@ -74,5 +74,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.14"
+tasklist = "0.2.15"
 ```

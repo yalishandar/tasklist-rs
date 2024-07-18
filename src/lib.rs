@@ -78,7 +78,7 @@ pub unsafe fn find_process_id_by_name(process_name: &str) -> Vec<u32> {
         Ok(_)=>loop {
             match Process32NextW(h, &mut process) {
                 Ok(_)=>{
-                    if get_proc_name(process.szExeFile) == process_name {
+                    if get_proc_name(&process.szExeFile) == process_name {
                         temp.push(process.th32ProcessID);
                     }
                     else {
@@ -121,17 +121,17 @@ pub unsafe fn find_first_process_id_by_name(process_name: &str) -> Option<u32> {
             loop {
                 match Process32NextW(h, &mut process){
                     Ok(_)=>{
-                        if get_proc_name(process.szExeFile) == process_name {
+                        if get_proc_name(&process.szExeFile) == process_name {
                             break;
                         }
                      else {
                         return None;
                         }
                     },
-                    Err(_)=>todo!()
+                    Err(_)=>{return None;}
             }}
         },
-        Err(_)=>todo!()
+        Err(_)=>{return None;}
     }
 
     let _ = CloseHandle(h);
@@ -182,7 +182,7 @@ pub unsafe fn find_process_name_by_id(process_id: u32) -> Option<String> {
 
     let _ = CloseHandle(h);
 
-    Some(get_proc_name(process.szExeFile))
+    Some(get_proc_name(&process.szExeFile))
 }
 
 use std::collections::HashMap;
@@ -218,7 +218,7 @@ pub unsafe fn tasklist() -> HashMap<String, u32> {
                 match Process32NextW(h, &mut process) {
                     Ok(_)=>{
                         temp.insert(
-                            get_proc_name(process.szExeFile),
+                            get_proc_name(&process.szExeFile),
                             process.th32ProcessID.try_into().unwrap(),
                         );
                     }
@@ -235,10 +235,10 @@ pub unsafe fn tasklist() -> HashMap<String, u32> {
 
 ///get the proc name by windows `[CHAR;260]` , retun the `String` name for human.
 #[cfg(any(windows, doc))]
-fn get_proc_name(name: [u16; 260]) -> String {
+fn get_proc_name(name: &[u16]) -> String {
     //use std::os::windows::ffi::OsStringExt;
     //let s = std::ffi::OsString::from_wide(&name);
-    let s = String::from_utf16_lossy(&name);
+    let s = String::from_utf16_lossy(name);
     //s.into_string().unwrap()
     s
 }
