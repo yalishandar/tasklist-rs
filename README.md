@@ -1,4 +1,4 @@
-# tasklist-rs
+# tasklist
 
 <p align="center">
     <img height="300" alt="tasklist-rs" src="images/ico.png">
@@ -9,7 +9,7 @@ _a small crate let you can easily get tasklist and process information on window
 - based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate 
 
 #### what information you can get
-1. Process name,pid,parrentID,theradsID.
+1. Process name,pid,parrentID,threadsID.
 2. Process start_time,exit_time,and CPU_time(including kernel time and user time).
 3. Process path and commandline params.
 4. Process SID and Domain/User.
@@ -17,8 +17,9 @@ _a small crate let you can easily get tasklist and process information on window
 6. Process memory information , including all of `PROCESS_MEMORY_COUNTERS` member.
 7. Process handles information , use `GetProcessHandleCount` Api.
 8. Process file infomation , use `GetFileVersionInfoExW` Api.
-9. Check whether the process is running in the WOW64 environment.
-10. Iterate over all processes
+9. Check whether the process is running in the WOW64 environment and get architecture info (x86/x64/ARM etc.)
+10. Iterate over all processes.
+11. Process termination functionality.
 
 _remember some infomation need higher privilege in some specific windows versions_
 
@@ -29,15 +30,11 @@ use tasklist;
 
 fn main(){
    
-    unsafe{
-        let tl = tasklist::Tasklist::new();
-        tasklist::enable_debug_priv();
-        for i in tl{
-            println!("{} {} {}",i.get_pid(),i.get_pname(),i.get_user());
-        }
+    let tl = tasklist::Tasklist::new().unwrap();
+    tasklist::enable_debug_priv();
+    for i in tl{
+        println!("{} {} {}",i.get_pid(),i.get_pname(),i.get_user());
     }
-
-
 }
 ```
 <p align="center">
@@ -51,7 +48,7 @@ use tasklist;
 
 fn main(){
     tasklist::enable_debug_priv();
-    for i in unsafe{tasklist::Tasklist::new()}{
+    for i in tasklist::Tasklist::new().unwrap(){
         let cpn = match i.get_file_info().get("CompanyName"){
             Some(h)=>h.to_string(),
             None=>"".to_string(),
@@ -74,5 +71,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.2.15"
+tasklist = "0.3.0"
 ```

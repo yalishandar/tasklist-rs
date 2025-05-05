@@ -1,6 +1,6 @@
 [package]
 name = "tasklist"
-version = "0.2.15"
+version = "0.3.0"
 keywords = ["tasklist", "windows", "process", "task", "list"]
 edition = "2021"
 description = "Get the tasklist and process information on windows"
@@ -14,7 +14,7 @@ default-target = "x86_64-pc-windows-msvc"
 
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58.0", features = [
+windows = { version = "0.61.1", features = [
     "Win32_Storage_FileSystem",
     "Win32_Globalization",
     "Win32_UI_Shell",
@@ -30,4 +30,6 @@ windows = { version = "0.58.0", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_SystemInformation"
 ] }
+windows-core = "0.61.0"

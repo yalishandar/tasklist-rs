@@ -5,137 +5,141 @@
 //! it based on [`windows-rs`](https://github.com/microsoft/windows-rs) crate.
 //!
 //! #### what information you can get
-//! 1. Process name,pid,parrentID,theradsID.
-//! 2. Process start_time,exit_time,and CPU_time(including kernel time and user time).
-//! 3. Process path and commandline params.
-//! 4. Process SID and Domain/User.
-//! 5. Process IO infomation , including all of `IO_COUNTERS` member.
-//! 6. Process memory information , including all of `PROCESS_MEMORY_COUNTERS` member.
-//! 7. Process handles information , use `GetProcessHandleCount` Api.
-//! 8. Process file infomation , use `GetFileVersionInfoExW` Api.
-//! 9. Check whether the process is running in the WOW64 environment.
-//! 10. Iterate over all processes
+//! 1. Process name, pid, parentID, threadsID
+//! 2. Process start_time, exit_time, and CPU_time (including kernel time and user time)
+//! 3. Process path and commandline parameters
+//! 4. Process SID and Domain/User information
+//! 5. Process IO counters (all `IO_COUNTERS` members)
+//! 6. Process memory information (all `PROCESS_MEMORY_COUNTERS` members)
+//! 7. Process handles count via `GetProcessHandleCount` API
+//! 8. Process file information via `GetFileVersionInfoExW` API
+//! 9. Detect WOW64 (Windows 32-bit on Windows 64-bit) environment and get architecture info
+//! 10. Full process iteration capabilities
+//! 11. Process termination functionality
+//! 12. Debug privilege elevation support
 //!
 //!  _remember some infomation need higher privilege in some specific windows versions_
 //! ## example
 //! Get all process pid , process name and user .
 //! ```rust
-//! use tasklist;
 //! fn main(){
 //!     unsafe{
-//!         let tl = tasklist::Tasklist::new();
-//!         for i in tl{
-//!             println!("{} {} {}",i.get_pid(),i.get_pname(),i.get_user());
+//!         match tasklist::Tasklist::new(){
+//!             Ok(tasks) => {
+//!                 for task in tasks{
+//!                     println!("pid: {} , name: {}", task.pid, task.pname);
+//!                 }
+//!             },
+//!             Err(e) => {
+//!                 println!("error: {}", e);
+//!             }
 //!         }
 //!     }
 //! }
 //! ```
 //! Get all process name , pid , company name , file description.
 //! ```rust
-//! use tasklist;
 //!
 //! fn main(){
-//!     for i in unsafe{tasklist::Tasklist::new()}{
-//!         let cpn = match i.get_file_info().get("CompanyName"){
-//!             Some(h)=>h.to_string(),
-//!             None=>"".to_string(),
+//!     for i in unsafe{tasklist::Tasklist::new().unwrap()}{
+//!         let cpn = match i.get_file_info(){
+//!             Ok(cpn) =>{
+//!                 println!("{:?}",cpn)
+//!             },
+//!             Err(_) => println!("not fonud"),
 //!         };
-//!         let des = match i.get_file_info().get("FileDescription"){
-//!             Some(h)=>h.to_string(),
-//!             None=>"".to_string(),
-//!         };
-//!         println!("\t{} \t{} \t{} \t{}",i.get_pname(),i.get_pid(),cpn,des)
-//!        }
+//! }
 //! }
 //!
 //! ```
 //!
 
-///find the process id by the name you gave , it return a `Vec<U32>` , if the process is not exist , it will return a empty `Vec<u32>`
+///find the process id by the name you gave , it return a `Result<Vec<u32>,String>`
 /// ```
 /// unsafe{
-///     let aid = tasklist::find_process_id_by_name("cmd.exe");
+///     let aid = tasklist::find_process_id_by_name("cmd.exe").unwrap();
 ///     println!("{:#?}",aid);
 /// }
 /// ```
 #[cfg(any(windows, doc))]
-pub unsafe fn find_process_id_by_name(process_name: &str) -> Vec<u32> {
+pub fn find_process_id_by_name(process_name: &str) -> Result<Vec<u32>,String> {
     use std::mem::size_of;
     use std::mem::zeroed;
-    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
     };
 
     let mut temp: Vec<u32> = vec![];
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
+    unsafe{
+        let h = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+            Ok(h) => SnapshotHandle(h),
+            Err(e) => return Err(format!("Failed to create process snapshot: {}", e)),
+        };
 
-    let mut process = zeroed::<PROCESSENTRY32W>();
-    process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+        let mut process = zeroed::<PROCESSENTRY32W>();
+        process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    match Process32FirstW(h, &mut process) {
-        Ok(_)=>loop {
-            match Process32NextW(h, &mut process) {
-                Ok(_)=>{
+        match Process32FirstW(h.0, &mut process) {
+            Ok(_) => {
+                loop {
                     if get_proc_name(&process.szExeFile) == process_name {
                         temp.push(process.th32ProcessID);
                     }
-                    else {
-                    break;
+                    match Process32NextW(h.0, &mut process) {
+                        Ok(_) => continue,
+                        Err(_) => {
+                            if temp.is_empty() {
+                                return Err(format!("No process named '{}' found", process_name));
+                            }
+                            break;
+                        }
                     }
-                },
-                Err(_)=>break
-            }
-        },
-        Err(_)=>{}
+                }
+            },
+            Err(e) => return Err(format!("Failed to enumerate first process: {}", e)),
+        }
+        Ok(temp)
     }
-
-    let _ = CloseHandle(h);
-    temp
 }
 
-/// return the first process id by the name you gave , it return the `Option<u32>` , `u32` is the process id.
+/// return the first process id by the name you gave , it return the `Result<u32,String>` , `u32` is the process id.
 /// ```
-/// unsafe{
-///     let pid = tasklist::find_first_process_id_by_name("cmd.exe");
+///     let pid = tasklist::find_first_process_id_by_name("cmd.exe").unwrap();
 ///     println!("{:#?}",pid);
-/// }
 #[cfg(any(windows, doc))]
-pub unsafe fn find_first_process_id_by_name(process_name: &str) -> Option<u32> {
+pub fn find_first_process_id_by_name(process_name: &str) -> Result<u32,String> {
     use std::mem::size_of;
     use std::mem::zeroed;
-    use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
     };
+    
+    unsafe {
+        let h = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+            Ok(h) => SnapshotHandle(h),
+            Err(e) => return Err(format!("Failed to create process snapshot: {}", e)),
+        };
 
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
+        let mut process = zeroed::<PROCESSENTRY32W>();
+        process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    let mut process = zeroed::<PROCESSENTRY32W>();
-    process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-
-    match Process32FirstW(h, &mut process){
-        Ok(_)=>{
-            loop {
-                match Process32NextW(h, &mut process){
-                    Ok(_)=>{
-                        if get_proc_name(&process.szExeFile) == process_name {
-                            break;
-                        }
-                     else {
-                        return None;
-                        }
-                    },
-                    Err(_)=>{return None;}
-            }}
-        },
-        Err(_)=>{return None;}
+        match Process32FirstW(h.0, &mut process) {
+            Ok(_) => {
+                loop {
+                    if get_proc_name(&process.szExeFile) == process_name {
+                        return Ok(process.th32ProcessID);
+                    }
+                    match Process32NextW(h.0, &mut process) {
+                        Ok(_) => continue,
+                        Err(e) => return Err(format!("Process enumeration failed: {}", e)),
+                    }
+                }
+            },
+            Err(e) => Err(format!("Failed to enumerate first process: {}", e)),
+        }
     }
-
-    let _ = CloseHandle(h);
-    Some(process.th32ProcessID)
 }
 
 /// just like the name , this function will return a `Option<String>` by the id you gave, `String` is the name of process.
@@ -147,7 +151,7 @@ pub unsafe fn find_first_process_id_by_name(process_name: &str) -> Option<u32> {
 ///
 /// ```
 #[cfg(any(windows, doc))]
-pub unsafe fn find_process_name_by_id(process_id: u32) -> Option<String> {
+pub fn find_process_name_by_id(process_id: u32) -> Option<String> {
     use std::mem::size_of;
     use std::mem::zeroed;
     use windows::Win32::Foundation::CloseHandle;
@@ -155,102 +159,95 @@ pub unsafe fn find_process_name_by_id(process_id: u32) -> Option<String> {
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
     };
+    unsafe{
+        let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
 
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
+        let mut process = zeroed::<PROCESSENTRY32W>();
+        process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
 
-    let mut process = zeroed::<PROCESSENTRY32W>();
-    process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-
-    match Process32FirstW(h, &mut process){
-        Ok(_)=>{
-            loop {
-                match Process32NextW(h, &mut process){
-                    Ok(_)=>{
-                        let id: u32 = process.th32ProcessID;
-                    if id == process_id {
-                        break;
-                    }
-                    },
-                    Err(_)=>{
-                        return None;
+        match Process32FirstW(h, &mut process){
+            Ok(_)=>{
+                loop {
+                    match Process32NextW(h, &mut process){
+                        Ok(_)=>{
+                            let id: u32 = process.th32ProcessID;
+                        if id == process_id {
+                            break;
+                        }
+                        },
+                        Err(_)=>{
+                            return None;
+                        }
                     }
                 }
-            }
-        },
-        Err(_)=>return None
+            },
+            Err(_)=>return None
+        }
+
+        let _ = CloseHandle(h);
+
+        Some(get_proc_name(&process.szExeFile))
     }
-
-    let _ = CloseHandle(h);
-
-    Some(get_proc_name(&process.szExeFile))
 }
 
-use std::collections::HashMap;
-
-/// get the windows tasklist ,return a `HashMap<String,u32>`
-/// `String` is the name of process, and `u32` is the id of process
-/// ```
-/// unsafe{
-///     let list = tasklist::tasklist();
-///     println!("{:#?}",list);
+/// Retrieves a snapshot of all running processes in the system.
+///
+/// This function creates a snapshot of all processes using the Windows ToolHelp API.
+/// If successful, it returns a `Tasklist` struct containing process information.
+/// If any error occurs during snapshot creation or process enumeration,
+/// it returns an error message as a string.
+///
+/// # Examples
+/// ```rust
+/// use tasklist;
+/// match tasklist::tasklist() {
+///     Ok(tasklist) => println!("{:?}", tasklist),
+///     Err(e) => eprintln!("Error: {}", e),
 /// }
 /// ```
+///
+/// # Returns
+/// - `Ok(Tasklist)`: A Tasklist iterator containing process information
+/// - `Err(String)`: An error message indicating the reason for the failure
 #[cfg(any(windows, doc))]
-pub unsafe fn tasklist() -> HashMap<String, u32> {
-    use std::mem::size_of;
-    use std::mem::zeroed;
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-        TH32CS_SNAPPROCESS,
-    };
-
-    let mut temp: HashMap<String, u32> = HashMap::new();
-
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
-
-    let mut process = zeroed::<PROCESSENTRY32W>();
-    process.dwSize = size_of::<PROCESSENTRY32W>() as u32;
-
-    match Process32FirstW(h, &mut process) {
-        Ok(_)=>{
-            loop {
-                match Process32NextW(h, &mut process) {
-                    Ok(_)=>{
-                        temp.insert(
-                            get_proc_name(&process.szExeFile),
-                            process.th32ProcessID.try_into().unwrap(),
-                        );
-                    }
-                    Err(_)=>break
-                }
-            }
-        },
-        Err(_)=>{}
-    }
-
-    let _ = CloseHandle(h);
-    temp
+pub fn tasklist() -> Result<Tasklist, String> {
+    Tasklist::new()
 }
 
 ///get the proc name by windows `[CHAR;260]` , retun the `String` name for human.
 #[cfg(any(windows, doc))]
 fn get_proc_name(name: &[u16]) -> String {
-    //use std::os::windows::ffi::OsStringExt;
-    //let s = std::ffi::OsString::from_wide(&name);
     let s = String::from_utf16_lossy(name);
-    //s.into_string().unwrap()
-    s
+    // remove the \0 and space
+    s.trim_end_matches(|c: char| c == '\0' || c.is_whitespace()).to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_proc_name_basic() {
+        let input = [99u16, 109u16, 100u16, 46u16, 101u16, 120u16, 101u16, 0u16]; // "cmd.exe\0"
+        assert_eq!(get_proc_name(&input), "cmd.exe");
+    }
+
+    #[test]
+    fn test_get_proc_name_with_spaces() {
+        let input = [110u16, 111u16, 116u16, 101u16, 112u16, 97u16, 100u16, 46u16, 101u16, 120u16, 101u16, 0u16, 32u16]; // "notepad.exe\0 "
+        assert_eq!(get_proc_name(&input), "notepad.exe");
+    }
+}
+
 /// enbale the debug privilege for your program , it return a `bool` to show if it success.
 /// ```
 /// println!("open the debug priv{:?}",tasklist::enable_debug_priv());
 /// ```
-pub unsafe fn enable_debug_priv() -> bool {
+pub fn enable_debug_priv() -> bool {
     use std::mem::size_of;
     use std::ptr::null_mut;
     use windows::core::PCSTR;
-    use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, LUID};
+    use windows::Win32::Foundation::{ HANDLE, LUID};
     use windows::Win32::Security::{
         AdjustTokenPrivileges, LookupPrivilegeValueA, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
         TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
@@ -258,90 +255,82 @@ pub unsafe fn enable_debug_priv() -> bool {
     use windows::Win32::System::Threading::GetCurrentProcess;
     use windows::Win32::System::Threading::OpenProcessToken;
 
-    let mut h: HANDLE = HANDLE(0 as _);
-    let _ = OpenProcessToken(
-        GetCurrentProcess(),
-        TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-        &mut h,
-    );
-    let la = LUID_AND_ATTRIBUTES {
-        Luid: LUID {
-            LowPart: 0,
-            HighPart: 0,
-        },
-        Attributes: SE_PRIVILEGE_ENABLED,
-    };
-    let mut tp = TOKEN_PRIVILEGES {
-        PrivilegeCount: 1,
-        Privileges: [la],
-    };
-    let privilege = "SeDebugPrivilege\0";
+    unsafe {
+        let mut h = HANDLE(0 as _);
+        if OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut h,
+        ).is_err() {
+            return false;
+        }
+        
+        let token = TokenHandle(h);
+        
+        let mut tp = TOKEN_PRIVILEGES {
+            PrivilegeCount: 1,
+            Privileges: [LUID_AND_ATTRIBUTES {
+                Luid: LUID { LowPart: 0, HighPart: 0 },
+                Attributes: SE_PRIVILEGE_ENABLED,
+            }],
+        };
 
-    match LookupPrivilegeValueA(
-        PCSTR(null_mut()),
-        PCSTR(privilege.as_ptr()),
-        &mut tp.Privileges[0].Luid,
-    )
-    
-    {
-       Ok(_)=>{
-        match AdjustTokenPrivileges(
-            h,
-            BOOL(0),
+        let privilege = "SeDebugPrivilege\0";
+        if LookupPrivilegeValueA(
+            PCSTR(null_mut()),
+            PCSTR(privilege.as_ptr()),
+            &mut tp.Privileges[0].Luid,
+        ).is_err() {
+            return false;
+        }
+
+        AdjustTokenPrivileges(
+            token.0,
+            false,
             Some(&mut tp),
             size_of::<TOKEN_PRIVILEGES>() as _,
             None,
             None,
-        )
-        
-        {
-            Ok(_)=>{
-                let _ = CloseHandle(h);
-                return true;
-            },
-            Err(_)=>{
-                let _ = CloseHandle(h);
-                return false;
-            }
-           
-        }
-       },
-       Err(_)=>{
-        let _ = CloseHandle(h);
-        return false;
-       }
-    } 
-    
+        ).is_ok()
+    }
 }
 
-///kill a process by process_id . if  success , it will return `true`
-/// ```
-/// unsafe{
-///     let pid = tasklist::find_process_id_by_name("cmd.exe");
-///     let pid = pid[0];
-///     println!("{:#?}",tasklist::kill(pid));
-/// }
+/// Terminates a process by its process ID.
 ///
+/// This function attempts to terminate the specified process using Windows API.
+/// It returns a `Result` indicating success or failure with detailed error message.
+///
+/// # Safety
+/// This function is unsafe because it works with raw Windows handles.
+///
+/// # Arguments
+/// * `pid` - The process ID to terminate
+///
+/// # Returns
+/// - `Ok(())` - Process was successfully terminated
+/// - `Err(String)` - Error message describing the failure
+///
+/// # Examples
 /// ```
-pub unsafe fn kill(pid: u32) -> bool {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+///     match tasklist::kill(1234) {
+///         Ok(()) => println!("Process terminated successfully"),
+///         Err(e) => eprintln!("Failed to terminate process: {}", e),
+/// }
+/// ```
+pub fn kill(pid: u32) -> Result<(), String> {
     use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    
+    unsafe{
+        let h = match OpenProcess(PROCESS_TERMINATE, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(e) => return Err(format!("Failed to open process {}: {}", pid, e)),
+        };
 
-    let _ = match OpenProcess(PROCESS_TERMINATE, BOOL(0), pid) {
-        Ok(h) => {
-            match TerminateProcess(h, 0) {
-                Ok(_)=>{
-                    let _ = CloseHandle(h);
-                return true;
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                    return false;
-                }
-            } 
+        match TerminateProcess(h.0, 0) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to terminate process {}: {}", pid, e)),
         }
-        Err(_) => return false,
-    };
+    }
 }
 //load infos::info
 pub mod infos;
@@ -351,3 +340,5 @@ pub use infos::info;
 pub use infos::info::*;
 #[doc(inline)]
 pub use infos::{IoCounter, MemoryCounter, Process, Tasklist};
+mod windows_wrap;
+use windows_wrap::{ProcessHandle,SnapshotHandle, TokenHandle};

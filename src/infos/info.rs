@@ -1,22 +1,32 @@
-///get the process sid and domain/user name from pid . it will return a tuple consisting of `(domain/user,sid)`. if the privilege is not enough , it will return the failed reson.
-/// ```
+use windows::Win32::Foundation::HANDLE;
+use crate::windows_wrap::ProcessHandle;
+
+/// Get the SID and domain/user name of a process by its PID.
+/// 
+/// This function attempts to retrieve the security identifier (SID) and the domain/user name
+/// associated with the specified process. If the operation is successful, it returns a tuple
+/// containing the domain/user name and the SID. If there is a privilege issue or other error,
+/// it returns an error message as a string.
+/// 
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// unsafe{
-///     println!("{:?}",tasklist::get_proc_sid_and_user(17716));
-/// }
+/// println!("{:?}", tasklist::get_proc_sid_and_user(17716));
+/// 
 /// ```
-/// ## OR
-/// ```
+/// 
+/// # Or
+/// ```rust
 /// use tasklist::info;
-/// unsafe{
-///     println!("{:?}",info::get_proc_sid_and_user(17716));
-/// }
-///
+/// println!("{:?}", info::get_proc_sid_and_user(17716));
 /// ```
-pub unsafe fn get_proc_sid_and_user(pid: u32) -> (String, String) {
-    use std::{ffi::c_void, os::raw::c_ulong, ptr::null};
+/// 
+/// # Returns
+/// - `Ok((String, String))`: A tuple containing the domain/user name and the SID.
+/// - `Err(String)`: An error message indicating the reason for the failure.
+pub  fn get_proc_sid_and_user(pid: u32) -> Result<(String,String),String>{
+    use std::{ffi::c_void, os::raw::c_ulong};
     use windows::core::PCSTR;
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
     use windows::Win32::NetworkManagement::NetManagement::UNLEN;
     use windows::Win32::Security::Authorization::ConvertSidToStringSidA;
     use windows::Win32::Security::{
@@ -24,87 +34,67 @@ pub unsafe fn get_proc_sid_and_user(pid: u32) -> (String, String) {
     };
     use windows::Win32::System::Threading::OpenProcessToken;
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
+    unsafe {
+        // get process handel
+        let process = match OpenProcess(PROCESS_QUERY_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(_) => return Err("OpenProcess failed".to_string()),
+        };
 
-    let _ = match OpenProcess(PROCESS_QUERY_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut pt = HANDLE(0 as _);
-            match OpenProcessToken(h, TOKEN_QUERY, &mut pt){
-                Ok(_)=>{
-                    let token_user =
-                    std::alloc::alloc(std::alloc::Layout::new::<TOKEN_USER>()) as *mut c_void;
-                let mut ret_size = 0;
+        // get token handle
+        let mut token_handle = HANDLE::default();
+        let token = match OpenProcessToken(process.0, TOKEN_QUERY, &mut token_handle) {
+            Ok(_) => ProcessHandle(token_handle),
+            Err(_) => return Err("OpenProcessToken failed".to_string()),
+        };
 
-                //get the ret_size
-                let _ = GetTokenInformation(pt, TokenUser, Some(token_user), 0, &mut ret_size);
-                // token_user = libc::malloc(ret_size as usize);
-                let mut buffer: Vec<u8> = vec![0; ret_size as usize];
-                match GetTokenInformation(
-                    pt,
-                    TokenUser,
-                    Some(buffer.as_mut_ptr() as *mut c_void),
-                    ret_size,
-                    &mut ret_size,
-                )
-                
-                {
-                   Ok(_)=>{
-                    let token_user_struct: &TOKEN_USER = &*buffer.as_ptr().cast();
-                    let sid = token_user_struct.User.Sid;
-                    
-                    let mut ret_sid = PSTR(null_mut());
-                    let _ = ConvertSidToStringSidA(sid, &mut ret_sid);
-                    
-                    let mut lp_name = [0u8; 1024];
-                    let mut lp_domain = [0u8; 1024];
-                    let user_name_ptr = PSTR(lp_name.as_mut_ptr());
-                    let mut name_length = UNLEN;
-                    let domain_name_ptr = PSTR(lp_domain.as_mut_ptr());
-                    let mut domain_length = MAX_PATH as c_ulong;
-                    let mut name_use = SID_NAME_USE(1);
-                    let _ = LookupAccountSidA(
-                        PCSTR(null()),
-                        sid,
-                        user_name_ptr,
-                        &mut name_length,
-                        domain_name_ptr,
-                        &mut domain_length,
-                        &mut name_use,
-                    );
-                    let _ = CloseHandle(h);
-                    let _ = CloseHandle(pt);
-                    return (
-                        convert_pstr_to_string(domain_name_ptr)
-                            + "/"
-                            + &convert_pstr_to_string(user_name_ptr),
-                        convert_pstr_to_string(ret_sid),
-                    );
-                   },
-                   Err(_)=>{
-                    let _ = CloseHandle(h);
-                    let _ = CloseHandle(pt);
-                    return (
-                        "access denied:GetTokenInfomation failed".to_string(),
-                        "access denied:GetTokenInfomation failed".to_string(),
-                    );
-                   }
-                }
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                    return (
-                        "access denied:GetTokenInfomation failed".to_string(),
-                        "access denied:GetTokenInfomation failed".to_string(),
-                    );
+        // get token user info
+        let mut size = 0;
+        if GetTokenInformation(token.0, TokenUser, None, 0, &mut size).is_err() {
+            let mut buffer = vec![0u8; size as usize];
+            if let Ok(_) = GetTokenInformation(
+                token.0, 
+                TokenUser, 
+                Some(buffer.as_mut_ptr() as *mut c_void), 
+                size, 
+                &mut size
+            ) {
+                let token_user = &*(buffer.as_ptr() as *const TOKEN_USER);
+                let sid = token_user.User.Sid;
+
+                // convert sid to string
+                let mut sid_str = PSTR::null();
+                let _ = ConvertSidToStringSidA(sid, &mut sid_str);
+
+                // get user name and domain
+                let mut name = [0u8; 1024];
+                let mut domain = [0u8; 1024];
+                let mut name_len = UNLEN;
+                let mut domain_len = MAX_PATH as c_ulong;
+                let mut use_type = SID_NAME_USE::default();
+
+                if LookupAccountSidA(
+                    PCSTR::null(),
+                    sid,
+                    Some(PSTR(name.as_mut_ptr())),
+                    &mut name_len,
+                    Some(PSTR(domain.as_mut_ptr())),
+                    &mut domain_len,
+                    &mut use_type
+                ).is_ok() {
+                    return Ok((
+                        format!("{}/{}", 
+                            convert_pstr_to_string(PSTR(domain.as_mut_ptr())),
+                            convert_pstr_to_string(PSTR(name.as_mut_ptr()))
+                        ),
+                        convert_pstr_to_string(sid_str)
+                    ));
                 }
             }
         }
-        Err(_) => {
-            return (
-                "access denied:OpenProcess failed".to_string(),
-                "access denied:OpenProcess failed".to_string(),
-            )
-        }
-    };
+
+        Err("Failed to get token information".to_string())
+    }
 }
 
 use std::collections::HashMap;
@@ -125,99 +115,111 @@ unsafe fn convert_pstr_to_string(pstr: PSTR) -> String {
     t
 }
 
-///get process thread id from pid , it will return `Vec<u32>` .
+/// Get the thread IDs of a process by its PID.
 ///
-/// ```
+/// This function attempts to retrieve the thread IDs of the specified process.
+/// It creates a snapshot of all threads in the system and filters out those belonging to the target process.
+/// If the operation is successful, it returns a vector containing the thread IDs.
+/// If an error occurs, it returns an error message as a string.
+///
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// unsafe{
-///     println!("{:?}",tasklist::get_proc_threads(17716));
-/// }
-///
+/// println!("{:?}", tasklist::get_proc_threads(17716));
 /// ```
 ///
-/// ## OR
-/// ```
+/// # Or
+/// ```rust
 /// use tasklist::info;
-/// unsafe{
-///     println!("{:?}",info::get_proc_threads(17716));
-/// }
-///
+/// println!("{:?}", info::get_proc_threads(17716));
 /// ```
-pub unsafe fn get_proc_threads(pid: u32) -> Vec<u32> {
-    use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+///
+/// # Returns
+/// - `Ok(Vec<u32>)`: A vector containing the thread IDs of the specified process.
+/// - `Err(String)`: An error message indicating the reason for the failure.
+pub  fn get_proc_threads(pid: u32) -> Result<Vec<u32>,String> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+        CreateToolhelp32Snapshot, Thread32First, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
-    if h == INVALID_HANDLE_VALUE {
-        panic!("error:INVALID_HANDLE_VALUE");
+    unsafe {
+        let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) {
+            Ok(h) => ProcessHandle(h),
+            Err(e) => return Err(format!("Failed to create snapshot: {:?}", e)),
+        };
+
+        let mut thread = zeroed::<THREADENTRY32>();
+        thread.dwSize = size_of::<THREADENTRY32>() as u32;
+        
+        if Thread32First(snapshot.0, &mut thread).is_err() {
+            return Err("Failed to get the first thread entry".to_string());
+        }
+
+        let result = iterate_threads(snapshot.0, pid, &mut thread);
+        Ok(result)
     }
 
-    let mut thread = zeroed::<THREADENTRY32>();
-    thread.dwSize = size_of::<THREADENTRY32>() as u32;
+}
+use windows::Win32::System::Diagnostics::ToolHelp::THREADENTRY32;
+unsafe fn iterate_threads(h: HANDLE, pid: u32, thread: &mut THREADENTRY32) -> Vec<u32> {
+    use windows::Win32::System::Diagnostics::ToolHelp::Thread32Next;
     let mut temp: Vec<u32> = vec![];
-    match Thread32First(h, &mut thread){
-        Ok(_)=>{
-            loop {
-                match Thread32Next(h, &mut thread){
-                    Ok(_)=>{
-                        if thread.th32OwnerProcessID == pid {
-                            temp.push(thread.th32ThreadID);
-                        }
-                    }
-                    ,Err(_)=>{
-                        break
-                    }
-                    
-                }
-            }
-        },
-        Err(_)=>{
-            return temp
+    loop {
+        if Thread32Next(h, thread).is_err() {
+            break;
+        }
+        if thread.th32OwnerProcessID == pid {
+            temp.push(thread.th32ThreadID);
         }
     }
-
-    let _ = CloseHandle(h);
     temp
 }
-///get process full path from pid , it will return  `String` which is the location of process.
-/// ```
+
+
+/// Get the full path of a process by its PID.
+/// 
+/// This function attempts to open a handle to the process specified by the PID and uses the Windows API `K32GetModuleFileNameExW`
+/// to retrieve the full path of the process. If the operation is successful, it returns a string containing the full path of the process.
+/// If an error occurs, it returns an error message as a string.
+/// 
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// unsafe{
-///     println!("{:?}",tasklist::get_proc_path(1232));
-/// }
+/// println!("{:?}", tasklist::get_proc_path(1232));
 /// ```
-/// ## OR
-/// ```
+/// 
+/// # Or
+/// ```rust
 /// use tasklist::info;
-/// unsafe{
-///     println!("{:?}",info::get_proc_path(1232));
-/// }
-///
+/// println!("{:?}", info::get_proc_path(1232));
 /// ```
-pub unsafe fn get_proc_path(pid: u32) -> String {
-    use windows::Win32::Foundation::{CloseHandle, BOOL, HINSTANCE};
+/// 
+/// # Returns
+/// - `Ok(String)`: A string containing the full path of the process.
+/// - `Err(String)`: An error message indicating the reason for the failure.
+pub fn get_proc_path(pid: u32) -> Result<String,String> {
     use windows::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut buffer: [u16; MAX_PATH as _] = [0; MAX_PATH as _];
-            let len = K32GetModuleFileNameExW(h, HINSTANCE(0 as _), buffer.as_mut_slice());
-            if len == 0 {
-                let _ = CloseHandle(h);
-                return "failed to get proc path".to_string();
-            } else {
-                let mut temp: Vec<u16> = vec![];
-                for i in 0..len {
-                    temp.push(buffer[i as usize]);
-                }
-                let _ = CloseHandle(h);
-                return conver_w_to_string(temp);
-            }
+    unsafe {
+        let process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(err) => return Err(format!("failed to open process: {:?}", err)),
+        };
+
+        let mut buffer: [u16; MAX_PATH as _] = [0; MAX_PATH as _];
+        let len = K32GetModuleFileNameExW(Some(process.0), None, buffer.as_mut_slice());
+        
+        if len == 0 {
+            return Err("failed to get proc path".to_string());
         }
-        Err(_) => return "faile to open process handle".to_string(),
-    };
+
+        let mut temp: Vec<u16> = vec![];
+        for i in 0..len {
+            temp.push(buffer[i as usize]);
+        }
+        
+        Ok(conver_w_to_string(temp))
+    }
 }
 
 ///this function is used to conver Vec<u16> to String which is always show up in W api.
@@ -226,59 +228,58 @@ pub(crate) fn conver_w_to_string(char: Vec<u16>) -> String {
 
     s
 }
-/// get process parrent id from pid , it will return a `Option<u32>`
-/// ```
+/// Get the parent process ID of a process by its PID.
+/// 
+/// This function attempts to create a snapshot of all processes in the system and iterates through it
+/// to find the process with the specified PID. If the process is found, it returns the ID of its parent process.
+/// If the process is not found or an error occurs, it returns `None`.
+/// 
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// unsafe{
-///     println!("{:?}",tasklist::get_proc_parrent(688));
-/// }
-///
+/// println!("{:?}", tasklist::get_proc_parrent(688));
 /// ```
-/// ## OR
-///
-/// ```
+/// 
+/// # Or
+/// ```rust
 /// use tasklist::info;
-/// unsafe{
-///     println!("{:?}",info::get_proc_parrent(688));
-/// }
+/// println!("{:?}", info::get_proc_parrent(688));
 /// ```
-pub unsafe fn get_proc_parrent(pid: u32) -> Option<u32> {
-    use windows::Win32::Foundation::CloseHandle;
+/// 
+/// # Returns
+/// - `Some(u32)`: The ID of the parent process of the specified process.
+/// - `None`: Indicates that the specified process was not found or an error occurred.
+pub fn get_proc_parrent(pid: u32) -> Option<u32> {
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
     };
 
-    let h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).unwrap();
+    unsafe {
+        let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+            Ok(h) => ProcessHandle(h),
+            Err(_) => return None,
+        };
 
-    let mut process = zeroed::<PROCESSENTRY32>();
-    process.dwSize = size_of::<PROCESSENTRY32>() as u32;
+        let mut process = zeroed::<PROCESSENTRY32>();
+        process.dwSize = size_of::<PROCESSENTRY32>() as u32;
 
-    match Process32First(h, &mut process){
-       Ok(_)=>{
+        if Process32First(snapshot.0, &mut process).is_err() {
+            return None;
+        }
+
         loop {
-            match Process32Next(h, &mut process){
-                Ok(_)=>{
-                    if process.th32ProcessID == pid {
-                        let _ = CloseHandle(h);
-                        return Some(process.th32ParentProcessID);
-                    }else{
-                        break
-                    }
+            if process.th32ProcessID == pid {
+                return Some(process.th32ParentProcessID);
+            }
 
-                },
-                Err(_)=>{
-                    break
-                }
-               
-            }}
-       },
-       Err(_)=>{
+            if Process32Next(snapshot.0, &mut process).is_err() {
+                break;
+            }
+        }
 
-       }
+        None
     }
 
-    let _ = CloseHandle(h);
-    return None;
 }
 use crate::infos::CpuTime;
 /// get process time , including Start time , Exit time , Kernel time and User time . it will return a `tuple` which is `(start_time,exit_time,CpuTime)`
@@ -295,61 +296,41 @@ use crate::infos::CpuTime;
 ///     println!("{:?}",info::get_proc_time(16056));
 /// }
 /// ```
-pub unsafe fn get_proc_time(pid: u32) -> (String, String, CpuTime) {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+pub fn get_proc_time(pid: u32) -> Result<(String, String, CpuTime),String> {
     use windows::Win32::System::Threading::{
         GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
-    match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut start_time = zeroed::<FILETIME>();
-            let mut exit_time = zeroed::<FILETIME>();
-            let mut kernel_time = zeroed::<FILETIME>();
-            let mut user_time = zeroed::<FILETIME>();
-            match GetProcessTimes(
-                h,
-                &mut start_time,
-                &mut exit_time,
-                &mut kernel_time,
-                &mut user_time,
-            )
-            {
-                Ok(_)=>{
-                    let _ = CloseHandle(h);
+    unsafe {
+        let process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(err) => return Err(format!("OpenProcess failed: {:?}", err)),
+        };
+
+        let mut start_time = zeroed::<FILETIME>();
+        let mut exit_time = zeroed::<FILETIME>();
+        let mut kernel_time = zeroed::<FILETIME>();
+        let mut user_time = zeroed::<FILETIME>();
+
+        match GetProcessTimes(
+            process.0,
+            &mut start_time,
+            &mut exit_time,
+            &mut kernel_time,
+            &mut user_time,
+        ) {
+            Ok(_) => {
                 let (start_time, exit_time, kernel_time, user_time) =
                     conver_time(start_time, exit_time, kernel_time, user_time);
-                return (
+                Ok((
                     start_time,
                     exit_time,
                     CpuTime::new((kernel_time, user_time)),
-                );
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                    return (
-                        "none".to_string(),
-                        "none".to_string(),
-                        CpuTime {
-                            kernel_time: "none".to_string(),
-                            user_time: "none".to_string(),
-                        },
-                    );
-                }
-                
-            } 
+                ))
+            }
+            Err(e) => Err(format!("GetProcessTimes failed: {:?}", e)),
         }
-        Err(_) => {
-            return (
-                "none".to_string(),
-                "none".to_string(),
-                CpuTime {
-                    kernel_time: "none".to_string(),
-                    user_time: "none".to_string(),
-                },
-            )
-        }
-    };
+    }
 }
 
 //use to conver `FILETIME` to `SYSTEMTIME`
@@ -410,306 +391,311 @@ pub(crate) unsafe fn conver_time(
     (start, exit, kernel, user)
 }
 
-/// get the process command line params . it will return `String` .
-/// ```
+/// Retrieves the command line parameters of a process by its PID.
+/// 
+/// This function attempts to open the specified process and read its command line parameters
+/// from the process environment block (PEB). If the operation is successful, it returns
+/// the command line parameters as a string. If any error occurs, it returns an error message.
+/// 
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// unsafe{
-///     println!("{}",tasklist::get_proc_params(20352));
+/// match tasklist::get_proc_params(20352) {
+///     Ok(params) => println!("{}", params),
+///     Err(e) => eprintln!("Error: {}", e),
 /// }
-///
 /// ```
-/// ## OR
-/// ```
+/// 
+/// # Or
+/// ```rust
 /// use tasklist::info;
-/// unsafe{
-///     println!("{}",info::get_proc_params(20352));
+/// match   info::get_proc_params(20352)  {
+///     Ok(params) => println!("{}", params),
+///     Err(e) => eprintln!("Error: {}", e),
 /// }
 /// ```
-pub unsafe fn get_proc_params(pid: u32) -> String {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+/// 
+/// # Returns
+/// - `Ok(String)`: The command line parameters of the process.
+/// - `Err(String)`: An error message indicating the reason for the failure.
+pub  fn get_proc_params(pid: u32) -> Result<String, String> {
     use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
     use windows::Win32::System::Threading::{
-        OpenProcess, PEB, PROCESS_BASIC_INFORMATION,
-        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, RTL_USER_PROCESS_PARAMETERS,
+        OpenProcess, PEB, PROCESS_BASIC_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, 
+        PROCESS_VM_READ, RTL_USER_PROCESS_PARAMETERS,
     };
-    use windows::Wdk::System::Threading::{NtQueryInformationProcess,PROCESSINFOCLASS};
+    use windows::Wdk::System::Threading::{NtQueryInformationProcess, PROCESSINFOCLASS};
+    unsafe{
+        let process = match OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+            false,
+            pid,
+        ) {
+            Ok(h) => ProcessHandle(h),
+            Err(_) => return Err(format!("OpenProcess failed: {:?}", GetLastError())),
+        };
 
-    match OpenProcess(
-        PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-        BOOL(0),
-        pid,
-    ) {
-        Ok(h) => {
-            let pc = zeroed::<PROCESSINFOCLASS>();
-            let mut pbi = zeroed::<PROCESS_BASIC_INFORMATION>();
-            if NtQueryInformationProcess(
-                h,
-                pc,
-                std::ptr::addr_of_mut!(pbi) as _,
-                size_of::<PROCESS_BASIC_INFORMATION>() as _,
-                null_mut(),
-            ).is_ok() 
-            {
-           
-                    let mut peb = zeroed::<PEB>();
-                    match ReadProcessMemory(
-                        h,
-                        pbi.PebBaseAddress as _,
-                        std::ptr::addr_of_mut!(peb) as _,
-                        size_of::<PEB>(),
-                        Some(null_mut()),
-                    )
-                    {
-                        Ok(_)=>{
-                            let mut proc_params = zeroed::<RTL_USER_PROCESS_PARAMETERS>();
-
-                            match ReadProcessMemory(
-                                h,
-                                peb.ProcessParameters as _,
-                                std::ptr::addr_of_mut!(proc_params) as _,
-                                size_of::<RTL_USER_PROCESS_PARAMETERS>(),
-                                Some(null_mut()),
-                            )
-                            {
-                                Ok(_)=>{
-                                    let cmd_lenth = proc_params.CommandLine.MaximumLength;
-                                    let cmd_buffer = proc_params.CommandLine.Buffer;
-        
-                                    return get_proc_params_from_buffer(cmd_buffer, cmd_lenth, h);
-                                },
-                                Err(_)=>{
-                                    let _ = CloseHandle(h);
-                                    return format!("access denied {:?}", GetLastError()).to_string();
-                                }
-                              
-                            }
-                        },
-                        Err(_)=>{
-                            let _ = CloseHandle(h);
-                            return format!("access denied {:?}", GetLastError()).to_string();
-                        }
-                       
-                    } 
-                
-            }else{
-                return format!("access denied {:?}", GetLastError()).to_string();
-            }
+        let mut pbi = zeroed::<PROCESS_BASIC_INFORMATION>();
+        if NtQueryInformationProcess(
+            process.0,
+            PROCESSINFOCLASS::default(),
+            &mut pbi as *mut _ as _,
+            size_of::<PROCESS_BASIC_INFORMATION>() as _,
+            null_mut(),
+        ).is_err() {
+            return Err(format!("NtQueryInformationProcess failed: {:?}", GetLastError()));
         }
-        Err(_)=>{
-            return format!("access denied {:?}", GetLastError()).to_string();
+
+        let mut peb = zeroed::<PEB>();
+        if ReadProcessMemory(
+            process.0,
+            pbi.PebBaseAddress as _,
+            &mut peb as *mut _ as _,
+            size_of::<PEB>(),
+            None,
+        ).is_err() {
+            return Err(format!("ReadProcessMemory(PEB) failed: {:?}", GetLastError()));
         }
-    };
-}
 
-use windows::core::PWSTR;
-use windows::Win32::Foundation::HANDLE;
-///this function is used to get transfer `PWSTR` of the process params to `String` . it need to do `ReadProcessMemory` again.
-pub(crate) unsafe fn get_proc_params_from_buffer(pwstr: PWSTR, len: u16, h: HANDLE) -> String {
-    use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
-
-    let mut temp = Vec::with_capacity(len as _);
-
-    match ReadProcessMemory(
-        h,
-        pwstr.0 as _,
-        std::ptr::addr_of_mut!(temp) as _,
-        len as _,
-        Some(null_mut()),
-    )
-    {
-        Ok(_)=>{
-            let x = &temp[0..len as usize];
-
-            let cmd_params = match x.iter().position(|&c| c == 0) {
-                Some(nul) => OsString::from_wide(&x[..nul]),
-                None => OsString::from_wide(x),
-            }
-            .into_string()
-            .unwrap();
-            return cmd_params;
-        },
-        Err(_)=>{
-            let _ = CloseHandle(h);
-            return format!("access denied {:?}", GetLastError());
+        let mut proc_params = zeroed::<RTL_USER_PROCESS_PARAMETERS>();
+        if ReadProcessMemory(
+            process.0,
+            peb.ProcessParameters as _,
+            &mut proc_params as *mut _ as _,
+            size_of::<RTL_USER_PROCESS_PARAMETERS>(),
+            None,
+        ).is_err() {
+            return Err(format!("ReadProcessMemory(Parameters) failed: {:?}", GetLastError()));
         }
-     
+
+        get_proc_params_from_buffer(
+            proc_params.CommandLine.Buffer, 
+            proc_params.CommandLine.MaximumLength, 
+            process.0
+        ).map_err(|e| format!("Failed to read command line: {}", e))
     }
 }
 
+use windows::core::PWSTR;
+///this function is used to get transfer `PWSTR` of the process params to `String` . it need to do `ReadProcessMemory` again.
+pub(crate) unsafe fn get_proc_params_from_buffer(
+    pwstr: PWSTR, 
+    len: u16, 
+    h: HANDLE
+) -> Result<String, String> {
+    use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+
+    let mut buffer = vec![0u16; len as usize / 2];
+    if ReadProcessMemory(
+        h,
+        pwstr.0 as _,
+        buffer.as_mut_ptr() as _,
+        len as _,
+        None,
+    ).is_err() {
+        return Err(format!("ReadProcessMemory failed: {:?}", GetLastError()));
+    }
+
+    Ok(OsString::from_wide(&buffer)
+        .into_string()
+        .map_err(|_| "Failed to convert wide string".to_string())?)
+}
+
 use crate::infos::IoCounter;
-/// get the process io counter , it will return a `IoCounter`
-/// if cant get the io counter , it will return a zero `IoCounter`
-/// ```
+/// Retrieves the I/O counters of a process by its PID.
+///
+/// This function attempts to open the specified process and retrieve its I/O counters.
+/// If the operation is successful, it returns an `IoCounter` struct containing the counters.
+/// If any error occurs, it returns a zero-initialized `IoCounter`.
+///
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// let io = unsafe{
-///     tasklist::get_proc_io_counter(17016)
-/// };
-/// println!("{:?}",io.get_other_operation_count());
+/// let io = tasklist::get_proc_io_counter(17016);
+/// println!("{:?}", io.get_other_operation_count());
 /// ```
-/// ## OR
-/// ```
+///
+/// # Or
+/// ```rust
 /// use tasklist::info;
-///let io = unsafe{
-///    info::get_proc_io_counter(17016)
-///};
-///println!("{:?}",io.get_other_operation_count());
+/// let io = info::get_proc_io_counter(17016);
+/// println!("{:?}", io.get_other_operation_count());
 /// ```
-pub unsafe fn get_proc_io_counter(pid: u32) -> IoCounter {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+///
+/// # Returns
+/// - `IoCounter`: Contains the process I/O counters if successful, otherwise zero-initialized.
+pub  fn get_proc_io_counter(pid: u32) -> IoCounter {
     use windows::Win32::System::Threading::{
         GetProcessIoCounters, OpenProcess, IO_COUNTERS, PROCESS_QUERY_LIMITED_INFORMATION,
     };
+    unsafe{
+        let process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(_) => return zeroed::<IoCounter>(),
+        };
 
-    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut io = zeroed::<IO_COUNTERS>();
-            match GetProcessIoCounters(h, &mut io) {
-                Ok(_)=>{
-                    let _ = CloseHandle(h);
-                    return IoCounter::new(io);
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                    return zeroed::<IoCounter>();
-                }
-                
-            }
+        let mut io = zeroed::<IO_COUNTERS>();
+        match GetProcessIoCounters(process.0, &mut io) {
+            Ok(_) => IoCounter::new(io),
+            Err(_) => zeroed::<IoCounter>(),
         }
-        Err(_) => return zeroed::<IoCounter>(),
-    };
+    }
 }
 use crate::infos::MemoryCounter;
-///get process memory info . it will return a `MemoryCounter` struct .
-/// ```
+/// Retrieves memory information of a process by its PID.
+///
+/// This function attempts to open the specified process and retrieve its memory counters.
+/// If the operation is successful, it returns a `MemoryCounter` struct containing the memory information.
+/// If any error occurs, it returns a zero-initialized `MemoryCounter`.
+///
+/// # Examples
+/// ```rust
 /// use tasklist;
-///
-/// let mem = unsafe{
-///     tasklist::get_proc_memory_info(17016)
-/// };
-/// println!("{:?}",mem.get_quota_peak_non_paged_pool_usage());
-///
+/// let mem = tasklist::get_proc_memory_info(17016);
+/// println!("{:?}", mem.get_quota_peak_non_paged_pool_usage());
 /// ```
-/// ## OR
-///```
-///use tasklist::info;
 ///
-///let mem = unsafe{
-///     info::get_proc_memory_info(17016)
-///};
-///println!("{:?}",mem.get_quota_peak_non_paged_pool_usage());
-///```
-pub unsafe fn get_proc_memory_info(pid: u32) -> MemoryCounter {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+/// # Or
+/// ```rust
+/// use tasklist::info;
+/// let mem = info::get_proc_memory_info(17016);
+/// println!("{:?}", mem.get_quota_peak_non_paged_pool_usage());
+/// ```
+///
+/// # Returns
+/// - `MemoryCounter`: Contains the process memory counters if successful, otherwise zero-initialized.
+pub fn get_proc_memory_info(pid: u32) -> MemoryCounter {
     use windows::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut mc = zeroed::<PROCESS_MEMORY_COUNTERS>();
-            if K32GetProcessMemoryInfo(h, &mut mc, size_of::<PROCESS_MEMORY_COUNTERS>() as _)
-                .as_bool()
-            {
-                let _ = CloseHandle(h);
-                return MemoryCounter::new(mc);
-            } else {
-                let _ = CloseHandle(h);
-                return zeroed::<MemoryCounter>();
-            }
+    unsafe {
+        let process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(_) => return zeroed::<MemoryCounter>(),
+        };
+
+        let mut mc = zeroed::<PROCESS_MEMORY_COUNTERS>();
+        if K32GetProcessMemoryInfo(
+            process.0,
+            &mut mc,
+            size_of::<PROCESS_MEMORY_COUNTERS>() as _,
+        ).as_bool() {
+            MemoryCounter::new(mc)
+        } else {
+            zeroed::<MemoryCounter>()
         }
-        Err(_) => return zeroed::<MemoryCounter>(),
-    };
+    }
 }
-/// get process handle counter . return `u32`
+/// Retrieves the handle count of a process by its PID.
 ///
-/// ```
+/// This function attempts to open the specified process and retrieve its handle count.
+/// If the operation is successful, it returns the handle count as Ok(u32).
+/// If any error occurs, it returns an error message as Err(String).
+///
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// for i in unsafe{tasklist::Tasklist::new()}{
-///     if i.pid == 8528{
-///         println!("{}",tasklist::get_process_handle_counter(i.get_pid()))
+/// for i in tasklist::Tasklist::new().unwrap()  {
+///     if i.pid == 8528 {
+///         match tasklist::get_process_handle_counter(i.get_pid()) {
+///             Ok(count) => println!("{}", count),
+///             Err(e) => eprintln!("Error: {}", e),
+///         }
 ///     }
 /// }
 /// ```
-/// ## OR
-/// ```
-///use tasklist::info;
-///for i in unsafe{tasklist::Tasklist::new()}{
-///     if i.pid == 8528{
-///         println!("{}",info::get_process_handle_counter(i.get_pid()))
-///     }
-///}
-/// ```
-pub unsafe fn get_process_handle_counter(pid: u32) -> u32 {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+///
+/// # Returns
+/// - `Ok(u32)`: The handle count of the process if successful
+/// - `Err(String)`: An error message indicating the reason for the failure
+pub fn get_process_handle_counter(pid: u32) -> Result<u32, String> {
     use windows::Win32::System::Threading::{
         GetProcessHandleCount, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
-     match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut count = 0 as u32;
-            match GetProcessHandleCount(h, &mut count){
-                Ok(_)=>{
-                    let _ = CloseHandle(h);
-                    return count;
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                    return 0;
-                }
-            }
-              
-        },
-        Err(_) => {return 0;}
-    };
+    unsafe {
+        let process = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            Ok(h) => ProcessHandle(h),
+            Err(e) => return Err(format!("Failed to open process: {:?}", e)),
+        };
+
+        let mut count = 0;
+        match GetProcessHandleCount(process.0, &mut count) {
+            Ok(_) => Ok(count),
+            Err(e) => Err(format!("Failed to get handle count: {:?}", e)),
+        }
+    }
 }
 
-/// get the file info of the process . use `GetFileVersionInfoExW` api . it will return a `HashMap<String,String>` including a lot of infomation.
-/// you can get value throught `CompanyName` `FileDescription` `OriginalFilename` `ProductName` `ProductVersion` `PrivateBuild` `InternalName` `LegalCopyright` `FileVersion` keys.
-/// if a process do not have `FileVersionInfoSize`, it will return a `HashMap` with a `null` value, like this -> `{}`.
-/// ```
-/// use tasklist::info;
-/// for i in unsafe{tasklist::Tasklist::new()}{
-///     unsafe{println!("{:?}",info::get_proc_file_info(i.get_pid()))};         
-/// }
-/// ```
-/// ```
+/// Retrieves file version information of a process by its PID.
+///
+/// This function uses `GetFileVersionInfoExW` API to retrieve file information.
+/// It returns a HashMap containing the following keys (when available):
+/// - `CompanyName`
+/// - `FileDescription` 
+/// - `OriginalFilename`
+/// - `ProductName`
+/// - `ProductVersion`
+/// - `PrivateBuild`
+/// - `InternalName`
+/// - `LegalCopyright`
+/// - `FileVersion`
+///
+/// # Examples
+/// ```rust
 /// use tasklist;
-/// for i in unsafe{tasklist::Tasklist::new()}{
-///     unsafe{println!("{:?}",tasklist::get_proc_file_info(i.get_pid()))};         
+/// for i in tasklist::Tasklist::new().unwrap() {
+///     println!("{:?}", tasklist::get_proc_file_info(i.get_pid()));
 /// }
 /// ```
 ///
+/// # Or
+/// ```rust
+/// use tasklist::info;
+/// for i in tasklist::Tasklist::new().unwrap() {
+///     println!("{:?}", info::get_proc_file_info(i.get_pid()));
+/// }
 /// ```
-/// for i in unsafe{tasklist::Tasklist::new()}{
-///     unsafe{println!("{:?}",get_proc_file_info(i.get_pid()).get("FileDescription"))};
-///  }
-/// ```
-/// NOTICE: some specific situation this function will return a `Some("")` but not a `None`
-pub unsafe fn get_proc_file_info(pid: u32) -> HashMap<String, String> {
+///
+/// # Returns
+/// - `Ok(HashMap<String, String>)`: Contains file version information if successful
+/// - `Err(String)`: Error message if operation fails
+///
+/// # Notice
+/// In some specific cases, this function may return `Some("")` (empty string) instead of `None`.
+/// If a process doesn't have `FileVersionInfoSize`, it will return an empty HashMap `{}`.
+pub fn get_proc_file_info(pid: u32) -> Result<HashMap<String, String>, String> {
     use std::ffi::OsStr;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::{
-        GetFileVersionInfoExW, GetFileVersionInfoSizeExW, FILE_VER_GET_LOCALISED,
+        GetFileVersionInfoExW, GetFileVersionInfoSizeExW, {FILE_VER_GET_LOCALISED,FILE_VER_GET_NEUTRAL},
     };
 
-    let path = get_proc_path(pid);
+    let path = match get_proc_path(pid) {
+        Ok(p) => p,
+        Err(e) => return Err(format!("Failed to get process path: {}", e)),
+    };
+
+    println!("Debug: Process path: {}", path); // 添加调试输出
+
     let path_str: Vec<u16> = OsStr::new(&path)
         .encode_wide()
         .chain(Some(0).into_iter())
         .collect();
 
     let mut temp: u32 = 0;
-
+unsafe{
     let len =
         GetFileVersionInfoSizeExW(FILE_VER_GET_LOCALISED, PCWSTR(path_str.as_ptr()), &mut temp);
-   
-    let mut addr = vec![0u16; len as _];
+    if len == 0 {
+        return Err(format!("Failed to get file version info size: {:?}", GetLastError()));
+    }
+    let mut addr = vec![0u16; len as usize];
     let mut hash: HashMap<String, String> = HashMap::new();
     match GetFileVersionInfoExW(
         FILE_VER_GET_LOCALISED,
         PCWSTR(path_str.as_ptr()),
-        0,
+        Some(0),
         len,
         addr.as_mut_ptr() as _,
     )
@@ -870,43 +856,217 @@ pub unsafe fn get_proc_file_info(pid: u32) -> HashMap<String, String> {
                 }
             }
        },
-       Err(_)=>{
-        return hash
+       Err(err)=>{
+        return Err(err.to_string())
        }
     }
+    
 
-    return hash;
+    return Ok(hash);
+}
 }
 
 ///judge the process is running on wow64 or not ， it will return a `Option<bool>` (you must consider the situation that OpenProcess cannot be used)
 ///
 /// ```
-/// let tl = Tasklist::new();
+/// use tasklist::Tasklist;
+/// let tl = Tasklist::new().unwrap();
 /// for i in tl{           
 ///    println!("pname: {}\tpid: {}\t is_wow_64 :{:?}",i.get_pname(),i.get_pid(),tasklist::is_wow_64(i.get_pid()));   
 /// }
 /// ```
-pub unsafe fn is_wow_64(pid: u32) -> Option<bool> {
-    use windows::Win32::Foundation::{CloseHandle, BOOL};
+pub fn is_wow_64(pid: u32) -> Option<bool> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows_core::BOOL;
     use windows::Win32::System::Threading::{
         IsWow64Process, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
-
-    let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, BOOL(0), pid) {
-        Ok(h) => {
-            let mut wow64: BOOL = BOOL(1);
-            match IsWow64Process(h, &mut wow64) {
-                Ok(_) =>{
-                    let _ = CloseHandle(h);
+    unsafe{
+        let _ = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, bool::from(false), pid) {
+            Ok(h) => {
+                let mut wow64: BOOL = BOOL(1);
+                match IsWow64Process(h, &mut wow64) {
+                    Ok(_) =>{
+                        let _ = CloseHandle(h);
+                        return Some(wow64.as_bool());
+                    },
+                    Err(_)=>{
+                        let _ = CloseHandle(h);
                     return Some(wow64.as_bool());
-                },
-                Err(_)=>{
-                    let _ = CloseHandle(h);
-                return Some(wow64.as_bool());
+                    }
+                    
                 }
-                
             }
-        }
+            Err(_) => return None,
+        };
+    }
+}
+
+// Define all IMAGE_FILE_MACHINE
+const IMAGE_FILE_MACHINE_UNKNOWN: u16 = 0x0000;
+const IMAGE_FILE_MACHINE_TARGET_HOST: u16 = 0x0001;
+const IMAGE_FILE_MACHINE_I386: u16 = 0x014c;
+const IMAGE_FILE_MACHINE_R3000: u16 = 0x0162;
+const IMAGE_FILE_MACHINE_R4000: u16 = 0x0166;
+const IMAGE_FILE_MACHINE_R10000: u16 = 0x0168;
+const IMAGE_FILE_MACHINE_WCEMIPSV2: u16 = 0x0169;
+const IMAGE_FILE_MACHINE_ALPHA: u16 = 0x0184;
+const IMAGE_FILE_MACHINE_SH3: u16 = 0x01a2;
+const IMAGE_FILE_MACHINE_SH3DSP: u16 = 0x01a3;
+const IMAGE_FILE_MACHINE_SH3E: u16 = 0x01a4;
+const IMAGE_FILE_MACHINE_SH4: u16 = 0x01a6;
+const IMAGE_FILE_MACHINE_SH5: u16 = 0x01a8;
+const IMAGE_FILE_MACHINE_ARM: u16 = 0x01c0;
+const IMAGE_FILE_MACHINE_THUMB: u16 = 0x01c2;
+const IMAGE_FILE_MACHINE_ARMNT: u16 = 0x01c4;
+const IMAGE_FILE_MACHINE_AM33: u16 = 0x01d3;
+const IMAGE_FILE_MACHINE_POWERPC: u16 = 0x01F0;
+const IMAGE_FILE_MACHINE_POWERPCFP: u16 = 0x01f1;
+const IMAGE_FILE_MACHINE_IA64: u16 = 0x0200;
+const IMAGE_FILE_MACHINE_MIPS16: u16 = 0x0266;
+const IMAGE_FILE_MACHINE_ALPHA64: u16 = 0x0284;
+const IMAGE_FILE_MACHINE_MIPSFPU: u16 = 0x0366;
+const IMAGE_FILE_MACHINE_MIPSFPU16: u16 = 0x0466;
+const IMAGE_FILE_MACHINE_TRICORE: u16 = 0x0520;
+const IMAGE_FILE_MACHINE_CEF: u16 = 0x0CEF;
+const IMAGE_FILE_MACHINE_EBC: u16 = 0x0EBC;
+const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+const IMAGE_FILE_MACHINE_M32R: u16 = 0x9041;
+const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+const IMAGE_FILE_MACHINE_CEE: u16 = 0xC0EE;
+
+/// Check if process is running under WOW64 and get architecture info
+/// Returns tuple: (is_wow64: bool, process_arch: &str, native_arch: &str)
+/// Returns None if failed to get information
+///
+/// # Examples
+/// ```
+/// use tasklist;
+/// unsafe {
+///     if let Some((is_wow64, process_arch, native_arch)) = tasklist::is_wow_64_2(1234) {
+///         println!("WOW64: {}, Process Arch: {}, Native Arch: {}", 
+///             is_wow64, process_arch, native_arch);
+///     }
+/// }
+/// ```
+/// 
+/// ## Alternative Usage
+/// ```
+/// use tasklist::info;
+/// unsafe {
+///     if let Some(info) = info::is_wow_64_2(1234) {
+///         let (is_wow64, process_arch, native_arch) = info;
+///         println!("Process {}: WOW64={}, Arch={}/{}", 
+///             1234, is_wow64, process_arch, native_arch);
+///     }
+/// }
+/// ```
+///
+/// # Return Value
+/// - `is_wow64`: Whether the process is running under WOW64
+/// - `process_arch`: Architecture type of the process (x86/x64/ARM etc.)
+/// - `native_arch`: Native architecture type of the system
+/// Returns None if failed to get information (process not exist or insufficient privileges)
+pub unsafe fn is_wow_64_2(pid: u32) -> Option<(bool, &'static str, &'static str)> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        IsWow64Process2, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::System::SystemInformation::IMAGE_FILE_MACHINE;
+
+    let h = match OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, bool::from(false), pid) {
+        Ok(h) => h,
         Err(_) => return None,
     };
+
+    let mut process_machine = IMAGE_FILE_MACHINE(0);
+    let mut native_machine = IMAGE_FILE_MACHINE(0);
+
+    match IsWow64Process2(
+        h,
+        &mut process_machine,
+        Some(&mut native_machine),
+    ) {
+        Ok(_) => {
+            let _ = CloseHandle(h);
+            
+            let process_arch = match process_machine.0 {
+                IMAGE_FILE_MACHINE_I386 => "x86",
+                IMAGE_FILE_MACHINE_AMD64 => "x64",
+                IMAGE_FILE_MACHINE_ARM => "ARM",
+                IMAGE_FILE_MACHINE_ARM64 => "ARM64",
+                IMAGE_FILE_MACHINE_ARMNT => "ARMNT",
+                IMAGE_FILE_MACHINE_IA64 => "IA64",
+                IMAGE_FILE_MACHINE_POWERPC => "PowerPC",
+                IMAGE_FILE_MACHINE_POWERPCFP => "PowerPCFP",
+                IMAGE_FILE_MACHINE_R3000 => "MIPS R3000",
+                IMAGE_FILE_MACHINE_R4000 => "MIPS R4000",
+                IMAGE_FILE_MACHINE_R10000 => "MIPS R10000",
+                IMAGE_FILE_MACHINE_WCEMIPSV2 => "MIPS WCE v2",
+                IMAGE_FILE_MACHINE_ALPHA => "Alpha AXP",
+                IMAGE_FILE_MACHINE_SH3 => "SH3",
+                IMAGE_FILE_MACHINE_SH3DSP => "SH3 DSP",
+                IMAGE_FILE_MACHINE_SH3E => "SH3E",
+                IMAGE_FILE_MACHINE_SH4 => "SH4",
+                IMAGE_FILE_MACHINE_SH5 => "SH5",
+                IMAGE_FILE_MACHINE_THUMB => "Thumb",
+                IMAGE_FILE_MACHINE_AM33 => "AM33",
+                IMAGE_FILE_MACHINE_MIPS16 => "MIPS16",
+                IMAGE_FILE_MACHINE_ALPHA64 => "Alpha64",
+                IMAGE_FILE_MACHINE_MIPSFPU => "MIPS FPU",
+                IMAGE_FILE_MACHINE_MIPSFPU16 => "MIPS FPU16",
+                IMAGE_FILE_MACHINE_TRICORE => "Tricore",
+                IMAGE_FILE_MACHINE_CEF => "CEF",
+                IMAGE_FILE_MACHINE_EBC => "EBC",
+                IMAGE_FILE_MACHINE_M32R => "M32R",
+                IMAGE_FILE_MACHINE_CEE => "CEE",
+                IMAGE_FILE_MACHINE_TARGET_HOST => "Target Host",
+                _ => "UNKNOWN",
+            };
+            
+            let native_arch = match native_machine.0 {
+                IMAGE_FILE_MACHINE_I386 => "x86",
+                IMAGE_FILE_MACHINE_AMD64 => "x64",
+                IMAGE_FILE_MACHINE_ARM => "ARM",
+                IMAGE_FILE_MACHINE_ARM64 => "ARM64",
+                IMAGE_FILE_MACHINE_ARMNT => "ARMNT",
+                IMAGE_FILE_MACHINE_IA64 => "IA64",
+                IMAGE_FILE_MACHINE_POWERPC => "PowerPC",
+                IMAGE_FILE_MACHINE_POWERPCFP => "PowerPCFP",
+                IMAGE_FILE_MACHINE_R3000 => "MIPS R3000",
+                IMAGE_FILE_MACHINE_R4000 => "MIPS R4000",
+                IMAGE_FILE_MACHINE_R10000 => "MIPS R10000",
+                IMAGE_FILE_MACHINE_WCEMIPSV2 => "MIPS WCE v2",
+                IMAGE_FILE_MACHINE_ALPHA => "Alpha AXP",
+                IMAGE_FILE_MACHINE_SH3 => "SH3",
+                IMAGE_FILE_MACHINE_SH3DSP => "SH3 DSP",
+                IMAGE_FILE_MACHINE_SH3E => "SH3E",
+                IMAGE_FILE_MACHINE_SH4 => "SH4",
+                IMAGE_FILE_MACHINE_SH5 => "SH5",
+                IMAGE_FILE_MACHINE_THUMB => "Thumb",
+                IMAGE_FILE_MACHINE_AM33 => "AM33",
+                IMAGE_FILE_MACHINE_MIPS16 => "MIPS16",
+                IMAGE_FILE_MACHINE_ALPHA64 => "Alpha64",
+                IMAGE_FILE_MACHINE_MIPSFPU => "MIPS FPU",
+                IMAGE_FILE_MACHINE_MIPSFPU16 => "MIPS FPU16",
+                IMAGE_FILE_MACHINE_TRICORE => "Tricore",
+                IMAGE_FILE_MACHINE_CEF => "CEF",
+                IMAGE_FILE_MACHINE_EBC => "EBC",
+                IMAGE_FILE_MACHINE_M32R => "M32R",
+                IMAGE_FILE_MACHINE_CEE => "CEE",
+                IMAGE_FILE_MACHINE_TARGET_HOST => "Target Host",
+                _ => "UNKNOWN",
+            };
+
+            Some((
+                process_machine.0 != IMAGE_FILE_MACHINE_UNKNOWN,
+                process_arch,
+                native_arch,
+            ))
+        }
+        Err(_) => {
+            let _ = CloseHandle(h);
+            None
+        }
+    }
 }
