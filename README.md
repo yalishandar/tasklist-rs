@@ -47,18 +47,13 @@ Get all process name , pid , company name , file description.
 use tasklist;
 
 fn main(){
-    tasklist::enable_debug_priv();
-    for i in tasklist::Tasklist::new().unwrap(){
-        let cpn = match i.get_file_info().get("CompanyName"){
-            Some(h)=>h.to_string(),
-            None=>"".to_string(),
-        };
-        let des = match i.get_file_info().get("FileDescription"){
-            Some(h)=>h.to_string(),
-            None=>"".to_string(),
-        };
-        println!("\t{} \t{} \t{} \t{}",i.get_pname(),i.get_pid(),cpn,des)
-       }
+    let tasks = tasklist::tasklist().unwrap();
+    for i in tasks {
+        match i.get_file_info(){
+            Ok(info) => println!("{:?}", info.get("FileDescription")),
+            Err(_) => (),
+        }
+    }
 }
 ```
 <p align="center">
