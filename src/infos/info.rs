@@ -676,7 +676,7 @@ pub fn get_proc_file_info(pid: u32) -> Result<HashMap<String, String>, String> {
         Err(e) => return Err(format!("Failed to get process path: {}", e)),
     };
 
-    println!("Debug: Process path: {}", path); // 添加调试输出
+    //println!("Debug: Process path: {}", path); // 添加调试输出
 
     let path_str: Vec<u16> = OsStr::new(&path)
         .encode_wide()
