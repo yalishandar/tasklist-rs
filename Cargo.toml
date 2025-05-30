@@ -1,6 +1,6 @@
 [package]
 name = "tasklist"
-version = "0.3.0"
+version = "0.3.1"
 keywords = ["tasklist", "windows", "process", "task", "list"]
 edition = "2021"
 description = "Get the tasklist and process information on windows"

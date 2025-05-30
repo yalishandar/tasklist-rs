@@ -66,5 +66,5 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tasklist = "0.3.0"
+tasklist = "0.3.1"
 ```
